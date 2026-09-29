@@ -1,0 +1,49 @@
+<?xml version='1.0' ?>
+<!--
+  Open-RMF core + the Rover A1 fleet adapter (ROS 2 Jazzy, in the rover_rmf container).
+  Mirrors rmf_demos' common.launch.xml without doors, lifts or RViz. RMF reaches the rover only
+  over MQTT (VDA 5050), so nothing here shares a ROS graph with the rover.
+-->
+<launch>
+  <arg name="use_sim_time" default="false" description="RMF runs on wall time; the rover's sim clock never reaches it"/>
+  <arg name="building_file" default="$(find-pkg-share rover_rmf_maps)/maps/rover_world/rover_world.building.yaml"/>
+  <arg name="nav_graph_file" default="$(find-pkg-share rover_rmf_maps)/maps/rover_world/nav_graphs/0.yaml"/>
+  <arg name="config_file" default="$(find-pkg-share rover_rmf_bringup)/config/rover_fleet.yaml"/>
+  <arg name="initial_map" default="L1"/>
+  <arg name="server_uri" default="" description="rmf-web api-server, e.g. ws://api-server:8000/_internal"/>
+  <arg name="broker_host" default="mosquitto" description="MQTT broker the rover's VDA 5050 connector uses"/>
+  <arg name="broker_port" default="1883"/>
+  <arg name="bidding_time_window" default="2.0"/>
+
+  <node pkg="rmf_traffic_ros2" exec="rmf_traffic_schedule" name="rmf_traffic_schedule_primary" output="both">
+    <param name="use_sim_time" value="$(var use_sim_time)"/>
+  </node>
+
+  <node pkg="rmf_traffic_ros2" exec="rmf_traffic_blockade" output="both">
+    <param name="use_sim_time" value="$(var use_sim_time)"/>
+  </node>
+
+  <node pkg="rmf_building_map_tools" exec="building_map_server" args="$(var building_file)" output="both">
+    <param name="use_sim_time" value="$(var use_sim_time)"/>
+  </node>
+
+  <!-- Schedule/trajectory websocket (port 8006) for the dashboard's map; no RViz. -->
+  <include file="$(find-pkg-share rmf_visualization)/visualization.launch.xml">
+    <arg name="use_sim_time" value="$(var use_sim_time)"/>
+    <arg name="map_name" value="$(var initial_map)"/>
+    <arg name="headless" value="true"/>
+  </include>
+
+  <node pkg="rmf_task_ros2" exec="rmf_task_dispatcher" output="both">
+    <param name="use_sim_time" value="$(var use_sim_time)"/>
+    <param name="bidding_time_window" value="$(var bidding_time_window)"/>
+    <param name="use_unique_hex_string_with_task_id" value="true"/>
+    <param name="server_uri" value="$(var server_uri)"/>
+  </node>
+
+  <node pkg="rover_rmf_fleet_adapter" exec="fleet_adapter" name="rover_fleet_adapter" output="both"
+        args="-c $(var config_file) -n $(var nav_graph_file) --broker-host $(var broker_host) --broker-port $(var broker_port)">
+    <param name="use_sim_time" value="$(var use_sim_time)"/>
+    <param name="server_uri" value="$(var server_uri)"/>
+  </node>
+</launch>

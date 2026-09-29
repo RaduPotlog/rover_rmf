@@ -1,0 +1,54 @@
+# Open-RMF managing Rover A1 over VDA 5050 / MQTT (see ../README.md).
+#
+#   docker compose -f docker/docker-compose.yml up --build
+#
+# Dashboard http://localhost:3000, api-server :8000, MQTT broker for the rover on host :1884
+# (:1884 because the host may run its own mosquitto on 1883). All ROS traffic stays on this
+# compose network (rmw_cyclonedds_cpp), apart from the rover's ROS 2 Lyrical graph.
+name: rover-rmf
+
+services:
+  mosquitto:
+    image: docker.io/library/eclipse-mosquitto:2
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    ports:
+      - "1884:1883"
+    restart: unless-stopped
+
+  api-server:
+    image: ghcr.io/open-rmf/rmf-web/api-server:jazzy-nightly
+    environment:
+      RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
+      RMF_API_SERVER_CONFIG: /config/api_server_config.py
+    volumes:
+      - ./api_server_config.py:/config/api_server_config.py:ro
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  dashboard:
+    image: ghcr.io/open-rmf/rmf-web/demo-dashboard:jazzy-nightly
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+  rmf:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.rmf
+    image: rover-rmf:jazzy
+    depends_on:
+      - mosquitto
+      - api-server
+    command:
+      - ros2
+      - launch
+      - rover_rmf_bringup
+      - rover_rmf.launch.xml
+      - server_uri:=ws://api-server:8000/_internal
+      - broker_host:=mosquitto
+      - broker_port:=1883
+    ports:
+      - "8006:8006"   # schedule/trajectory websocket used by the dashboard's map
+    restart: unless-stopped

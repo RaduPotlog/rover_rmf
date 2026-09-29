@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>rover_rmf_maps</name>
+  <version>0.1.0</version>
+  <description>
+    Open-RMF building maps for Rover A1: the rover_gazebo world (rover_world.sdf) as a
+    traffic-editor building with a floor plan, waypoints and lanes, and its generated nav graph.
+  </description>
+  <maintainer email="potlogradu@gmail.com">radupotlog</maintainer>
+  <license>Apache License 2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <build_depend>rmf_building_map_tools</build_depend>
+  <exec_depend>rmf_building_map_tools</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

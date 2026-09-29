@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>rover_rmf_fleet_adapter</name>
+  <version>0.1.0</version>
+  <description>
+    Open-RMF EasyFullControl fleet adapter for Rover A1. It is VDA 5050 2.0 master control over
+    MQTT: RMF destinations become VDA orders for the rover's rover_vda5050 connector, the rover's
+    VDA state becomes RMF robot state. Runs off-robot (ROS 2 Jazzy container, see ../docker).
+  </description>
+  <maintainer email="potlogradu@gmail.com">radupotlog</maintainer>
+  <license>Apache License 2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+
+  <exec_depend>python3-paho-mqtt</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>rmf_fleet_adapter_python</exec_depend>
+
+  <test_depend>ament_cmake_pytest</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

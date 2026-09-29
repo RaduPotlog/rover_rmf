@@ -1,0 +1,88 @@
+# Open-RMF fleet config for Rover A1 (EasyFullControl, rmf_fleet_adapter Jazzy) plus the
+# vda5050 section read by rover_rmf_fleet_adapter. Every value names its source; ASSUMPTION
+# marks a guess that only shapes RMF's time/energy estimates, not how the rover drives (Nav 2
+# does that, with rover_navigation/config/rover_nav_params.yaml).
+
+rmf_fleet:
+  name: "rover_fleet"
+  limits:
+    # [velocity m/s, acceleration m/s^2] RMF plans its schedule with. Nav 2 caps the rover at
+    # 0.8 m/s and 1.5 m/s^2 (rover_nav_params.yaml velocity_smoother max_velocity/max_accel);
+    # 0.5 m/s is the cruise it keeps in practice (wheel PID overshoot, memory 2026-09-27) and
+    # keeps RMF's arrival estimates conservative. ASSUMPTION.
+    linear: [0.5, 0.75]
+    # Skid steer: wz 1.0 command gives ~0.5 rad/s real turn rate (verified live 2026-09-27).
+    angular: [0.5, 1.0]
+  profile:
+    # Circle around the 0.913 x 0.803 m footprint (rover_nav_params.yaml footprint comment,
+    # measured 2026-09-27): radius = hypot(0.4565, 0.4015) = 0.61 m.
+    footprint: 0.61
+    # Space other fleets' robots should keep. ASSUMPTION.
+    vicinity: 0.9
+  reversible: false        # Nav 2 min_velocity -0.5 allows reversing, but RMF should not plan it.
+  battery_system:          # ASSUMPTION: no battery spec recorded for Rover A1 yet.
+    voltage: 24.0
+    capacity: 40.0
+    charging_current: 10.0
+  mechanical_system:       # ASSUMPTION
+    mass: 60.0
+    moment_of_inertia: 10.0
+    friction_coefficient: 0.22
+  ambient_system:          # ASSUMPTION
+    power: 50.0
+  tool_system:
+    power: 0.0
+  recharge_threshold: 0.10
+  recharge_soc: 1.0
+  # Off: without a battery reading RMF would only guess when to go charge (default is a check
+  # every 10 s).
+  retreat_to_charger_interval: 0.0
+  publish_fleet_state: 10.0
+  # Gazebo has no battery: the adapter reports vda5050.unknown_battery_soc and RMF must not
+  # plan charging trips around a drain it cannot see.
+  account_for_battery_drain: false
+  task_capabilities:
+    loop: true             # patrol / go-to-place
+    delivery: false
+  actions: []
+  finishing_request: "park"
+  responsive_wait: true
+  reassign_task_interval: 120
+  robots:
+    rover_a1:
+      charger: "rover_a1_charger"
+  # RMF map -> robot frame, per RMF map (level). rover_rmf_maps puts RMF (x, y) at world
+  # (x - 12.5, y + 12.5); the simulated rover localizes with SLAM, whose map frame starts at the
+  # spawn pose, world (0, -2) with yaw 0 (rover_gazebo simulate_robot.launch.py). So
+  # robot = RMF + (-12.5, 14.5). A real site needs its own survey here.
+  transforms:
+    L1:
+      rotation: 0.0
+      scale: 1.0
+      translation: [-12.5, 14.5]
+
+vda5050:
+  # The rover's connector (rover_vda5050_bringup/config/connector.yaml).
+  version: "2.0.0"
+  interface_name: "uagv"
+  manufacturer: "MechatronicsAcademy"
+  broker:
+    # Compose service name; the host-side connector reaches the same broker on localhost:1884.
+    # The fleet_adapter --broker-host/--broker-port arguments override these.
+    host: "mosquitto"
+    port: 1883
+    username: ""
+    password: ""
+  # RMF map name reported while the rover's mapId is empty (connector.yaml rover.map_id "").
+  map_name: "L1"
+  # Reported as the state of charge when the rover has no battery reading (0 % and 0 V).
+  unknown_battery_soc: 1.0
+  accept_timeout: 10.0     # s; the connector publishes state every 1 s and on events
+  cancel_timeout: 20.0     # s; rover_mission_manager drains a cancelled Nav 2 goal first
+  # s without 0.3 m / 0.5 rad of progress on an active order before the command fails and RMF
+  # replans (Nav 2 keeps replanning forever when the skid steer stalls near a goal). 0 = off.
+  stall_timeout: 60.0
+  update_frequency: 10.0   # Hz, RobotState updates to RMF
+  robots:
+    rover_a1:
+      serial_number: "rover_a1"

@@ -1,0 +1,38 @@
+# Open-RMF (ROS 2 Jazzy) + the Rover A1 fleet adapter. RMF core has no Lyrical release, and the
+# rover is reached only over MQTT, so this image never needs the rover's ROS graph.
+#
+#   docker compose -f docker/docker-compose.yml build rmf      (context: the rover_rmf repo)
+FROM docker.io/library/ros:jazzy-ros-base
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ros-jazzy-rmf-building-map-tools \
+        ros-jazzy-rmf-demos-tasks \
+        ros-jazzy-rmf-fleet-adapter \
+        ros-jazzy-rmf-fleet-adapter-python \
+        ros-jazzy-rmf-task-ros2 \
+        ros-jazzy-rmf-traffic-ros2 \
+        ros-jazzy-rmf-visualization \
+        ros-jazzy-rmw-cyclonedds-cpp \
+        ros-jazzy-ament-cmake-pytest \
+        python3-paho-mqtt \
+        python3-pytest \
+        python3-yaml \
+        mosquitto-clients \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /rmf_ws
+COPY rover_rmf_fleet_adapter src/rover_rmf/rover_rmf_fleet_adapter
+COPY rover_rmf_maps src/rover_rmf/rover_rmf_maps
+COPY rover_rmf_bringup src/rover_rmf/rover_rmf_bringup
+
+RUN . /opt/ros/jazzy/setup.sh \
+    && colcon build --event-handlers console_direct- \
+    && colcon test --packages-select rover_rmf_fleet_adapter --event-handlers console_direct- \
+    && colcon test-result --verbose
+
+# Same RMW as the rmf-web api-server image (rmw_cyclonedds_cpp).
+ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+COPY docker/entrypoint.sh /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["ros2", "launch", "rover_rmf_bringup", "rover_rmf.launch.xml"]
