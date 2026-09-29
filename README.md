@@ -143,7 +143,7 @@ drive UI, and that map becomes the RMF site.
    ```
 5. **Import the map and run RMF:**
    ```bash
-   scripts/import_rover_map.py lab --from-rover root@192.168.1.201   # scp from port 24
+   scripts/import_rover_map.py lab --from-rover root@192.168.1.201   # ssh port 24, one password prompt
    RMF_SITE=lab RMF_BROKER_HOST=192.168.1.201 \
        docker compose -f docker/docker-compose.yml up -d --build
    ```

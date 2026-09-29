@@ -5,7 +5,7 @@
 """
 Import a map saved on the rover as an Open-RMF site.
 
-    import_rover_map.py lab --from-rover root@192.168.1.201     # scp from the rover
+    import_rover_map.py lab --from-rover root@192.168.1.201     # over ssh (one password prompt)
     import_rover_map.py lab --dir ~/rover_maps/lab               # a local copy
 
 The map is one saved with the drive UI in indoor mode (rover_indoor_nav_manager:
@@ -23,10 +23,12 @@ VDA 5050 mapId. Then rebuild and start RMF for the site:
 """
 
 import argparse
+import io
 import os
 import re
 import subprocess
 import sys
+import tarfile
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -40,18 +42,35 @@ import yaml  # noqa: E402
 TEMPLATE = os.path.join(REPO, 'rover_rmf_bringup', 'config', 'fleet_rover_world.yaml')
 
 
-def fetch(name: str, ssh_target: str, ssh_port: int, into: str) -> str:
+# Runs on the rover (orchestrator container). One ssh connection for everything, so one
+# password prompt; tar instead of scp, which needs no SFTP subsystem.
+REMOTE_SCRIPT = """
+cd /maps/{name} 2>/dev/null || {{
+    echo "maps on the rover: $(cd /maps 2>/dev/null && ls -d */ | tr -d / | tr '\\n' ' ')" >&2
+    exit 3; }}
+[ -f map.yaml ] && [ -f map.pgm ] || {{ echo "/maps/{name} has no map.yaml/map.pgm" >&2; exit 4; }}
+tar cf - map.yaml map.pgm $([ -f places.yaml ] && echo places.yaml)
+"""
+
+
+def fetch(name: str, ssh_target: str, ssh_port: int, into: str,
+          ssh: tuple = ('ssh',)) -> str:
     """Copy /maps/<name>/ from the rover's orchestrator container (sshd on port 24)."""
     target = os.path.join(into, name)
     os.makedirs(target)
-    for file in ('map.yaml', 'map.pgm', 'places.yaml'):
-        cmd = ['scp', '-q', '-P', str(ssh_port), '-o', 'ConnectTimeout=10',
-               f'{ssh_target}:/maps/{name}/{file}', target]
-        if subprocess.run(cmd).returncode != 0:
-            if file == 'places.yaml':
-                continue  # reported below as "no places"
-            sys.exit(f'Could not copy /maps/{name}/{file} from {ssh_target} (port {ssh_port}). '
-                     'Is the map saved, and the rover reachable?')
+    cmd = list(ssh) + ['-p', str(ssh_port), '-o', 'ConnectTimeout=10', ssh_target,
+                       REMOTE_SCRIPT.format(name=name)]
+    print(f'Copying /maps/{name} from {ssh_target} (ssh port {ssh_port})...', flush=True)
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    error = result.stderr.decode(errors='replace').strip()
+    if result.returncode == 3:
+        sys.exit(f'No map named {name!r} on the rover. {error}')
+    if result.returncode == 4:
+        sys.exit(f'{error}. Save the map in the drive UI first.')
+    if result.returncode != 0:
+        sys.exit(f'ssh to {ssh_target} port {ssh_port} failed ({result.returncode}): {error}')
+    with tarfile.open(fileobj=io.BytesIO(result.stdout)) as archive:
+        archive.extractall(target, filter='data')
     return target
 
 
