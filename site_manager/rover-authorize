@@ -8,12 +8,22 @@
 #   docker compose -f docker/docker-compose.yml exec site-manager rover-authorize
 #
 # The key stays in the site-manager-ssh volume. The rover forgets it when its orchestrator
-# container is recreated (a new release); run this again then.
+# container is recreated (a new release); run this again then. The new container also has new
+# ssh host keys: this shows the new fingerprint and, once confirmed, forgets the old one.
 set -e
 TARGET="${ROVER_SSH:-root@192.168.1.201}"
 PORT="${ROVER_SSH_PORT:-24}"
+HOST="${TARGET#*@}"
 KEY="$HOME/.ssh/id_ed25519"
 [ -f "$KEY" ] || ssh-keygen -q -t ed25519 -N '' -C rover-rmf-site-manager -f "$KEY"
+if ssh -p "$PORT" -o BatchMode=yes -o ConnectTimeout=10 "$TARGET" true 2>&1 \
+        | grep -q 'REMOTE HOST IDENTIFICATION HAS CHANGED'; then
+    echo "The rover's ssh host key changed. A new rover release does that. Its keys now:"
+    ssh-keyscan -p "$PORT" "$HOST" 2>/dev/null | ssh-keygen -lf -
+    read -r -p "Trust the new key? Only if the rover was just updated or reflashed [y/N] " answer
+    [ "$answer" = y ] || [ "$answer" = Y ] || { echo "Not changed."; exit 1; }
+    ssh-keygen -q -R "[$HOST]:$PORT" >/dev/null
+fi
 echo "Installing the site manager's key on $TARGET (ssh port $PORT)."
 ssh-copy-id -i "$KEY.pub" -p "$PORT" -o StrictHostKeyChecking=accept-new "$TARGET"
 ssh -p "$PORT" -o BatchMode=yes "$TARGET" true && echo "Done: the RMF sites page can now read the rover's maps."

@@ -38,6 +38,10 @@ FAKE_SSH = """#!/bin/bash
 if [ "$FAKE_SSH_FAIL" = denied ]; then
     echo "root@rover: Permission denied (password)." >&2; exit 255
 fi
+if [ "$FAKE_SSH_FAIL" = host_changed ]; then
+    echo "@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @" >&2
+    echo "Host key verification failed." >&2; exit 255
+fi
 script="${{@: -1}}"
 exec bash -c "$script"
 """
@@ -91,6 +95,8 @@ def test_ssh_check_tells_a_missing_key_from_an_unreachable_rover(fake_ssh, monke
     monkeypatch.setenv('FAKE_SSH_FAIL', 'denied')
     state, detail = SshMapSource('root@rover', ssh=(fake_ssh,)).check()
     assert state == 'needs_key' and 'Permission denied' in detail
+    monkeypatch.setenv('FAKE_SSH_FAIL', 'host_changed')
+    assert SshMapSource('root@rover', ssh=(fake_ssh,)).check()[0] == 'needs_key'
     state, _ = SshMapSource('root@rover', ssh=('/bin/false',)).check()
     assert state == 'unreachable'
 

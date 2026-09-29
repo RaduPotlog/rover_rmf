@@ -148,7 +148,7 @@ function renderAccess() {
       <p>Run this once in a terminal on this laptop, in <code>src/rover_rmf</code>, and type the
          rover's root password when asked:</p>
       <pre>docker compose -f docker/docker-compose.yml exec site-manager rover-authorize</pre>
-      <p class="muted">A new rover release (balena push) forgets the key; run it again then.</p>`;
+      <p class="muted">A new rover release (balena push) forgets the key and changes the rover's host key; run it again then and confirm the new host key.</p>`;
   } else {
     html = `<span class="status"><span class="dot bad"></span>Cannot reach ${esc(a.source)}</span>
       <p class="muted">${esc(a.detail || '')}</p>

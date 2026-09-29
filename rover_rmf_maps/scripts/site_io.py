@@ -163,7 +163,8 @@ class SshMapSource:
         if result.returncode == 0:
             return 'ok', ''
         error = self._error(result)
-        if 'Permission denied' in error:
+        # A new rover release forgets our key and changes its host key; rover-authorize fixes both.
+        if 'Permission denied' in error or 'REMOTE HOST IDENTIFICATION HAS CHANGED' in error:
             return 'needs_key', error
         return 'unreachable', error
 
