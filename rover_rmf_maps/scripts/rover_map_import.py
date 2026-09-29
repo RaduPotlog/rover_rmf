@@ -286,9 +286,10 @@ def import_site(name: str, map_dir: str, charger: str, clearance: float = 0.8,
     grid = classify(rows, meta)
     places = load_places(os.path.join(map_dir, 'places.yaml'))
     if len(places) < 2:
+        found = ', '.join(repr(p.name) for p in places) or 'none'
         raise MapImportError(
-            f'{map_dir}: {len(places)} place(s); save at least two in the drive UI '
-            f'(one of them {charger!r}, where the rover parks)')
+            f'map {name!r} has {len(places)} place(s) ({found}); save at least two in the '
+            f'drive UI, one of them {charger!r} where the rover parks (or pass --charger)')
     by_name = {p.name.lower(): p for p in places}
     if len(by_name) != len(places):
         raise MapImportError(f'{map_dir}: place names differ only in case')
