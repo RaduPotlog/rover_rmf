@@ -15,8 +15,9 @@
   <arg name="config_file" default="$(find-pkg-share rover_rmf_bringup)/config/fleet_$(var site).yaml"/>
   <arg name="initial_map" default="$(var site)"/>
   <arg name="server_uri" default="" description="rmf-web api-server, e.g. ws://api-server:8000/_internal"/>
-  <arg name="broker_host" default="mosquitto" description="MQTT broker the rover's VDA 5050 connector uses"/>
-  <arg name="broker_port" default="1883"/>
+  <!-- Empty / 0: the broker named in the site's fleet config (vda5050.broker). -->
+  <arg name="broker_host" default="" description="Override: MQTT broker the rover's VDA 5050 connector uses"/>
+  <arg name="broker_port" default="0"/>
   <arg name="bidding_time_window" default="2.0"/>
 
   <node pkg="rmf_traffic_ros2" exec="rmf_traffic_schedule" name="rmf_traffic_schedule_primary" output="both">
@@ -46,7 +47,7 @@
   </node>
 
   <node pkg="rover_rmf_fleet_adapter" exec="fleet_adapter" name="rover_fleet_adapter" output="both"
-        args="-c $(var config_file) -n $(var nav_graph_file) --broker-host $(var broker_host) --broker-port $(var broker_port)">
+        args="-c $(var config_file) -n $(var nav_graph_file) --broker-host=$(var broker_host) --broker-port=$(var broker_port)">
     <param name="use_sim_time" value="$(var use_sim_time)"/>
     <param name="server_uri" value="$(var server_uri)"/>
   </node>

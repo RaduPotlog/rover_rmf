@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3-pytest \
         python3-yaml \
         mosquitto-clients \
+        openssh-client \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /rmf_ws
@@ -35,5 +36,11 @@ RUN . /opt/ros/jazzy/setup.sh \
 # Same RMW as the rmf-web api-server image (rmw_cyclonedds_cpp).
 ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 COPY docker/entrypoint.sh /entrypoint.sh
+# RMF supervisor (restarts RMF when the active site changes) and the site manager page, which
+# imports the importer's modules from /opt/rover_rmf_maps_scripts.
+COPY docker/run_rmf.sh /usr/local/bin/run_rmf.sh
+COPY rover_rmf_maps/scripts /opt/rover_rmf_maps_scripts
+COPY site_manager /opt/site_manager
+RUN ln -s /opt/site_manager/rover-authorize /usr/local/bin/rover-authorize
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["ros2", "launch", "rover_rmf_bringup", "rover_rmf.launch.xml"]
+CMD ["run_rmf.sh"]

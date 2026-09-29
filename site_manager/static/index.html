@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RMF sites</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1d2330; --muted: #5d6677; --line: #dde1e8;
+    --accent: #2860d8; --ok: #1e9b4a; --warn: #b86e00; --bad: #c62f2f; --chip: #eef1f6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171d; --card: #1d2129; --text: #e6e9ef; --muted: #99a2b3; --line: #2e3440;
+      --accent: #6b9bff; --ok: #4cc47a; --warn: #e5a13a; --bad: #ff6b6b; --chip: #262b35;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+         background: var(--bg); color: var(--text); }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px;
+           padding: 16px 24px; border-bottom: 1px solid var(--line); background: var(--card); }
+  header h1 { font-size: 20px; margin: 0; }
+  header .spacer { flex: 1; }
+  main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 48px; display: grid; gap: 20px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+            padding: 16px 18px; }
+  section h2 { font-size: 16px; margin: 0 0 12px; display: flex; align-items: center; gap: 10px; }
+  .muted { color: var(--muted); }
+  .status { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); }
+  .dot.bad { background: var(--bad); }
+  button { font: inherit; border: 1px solid var(--line); background: var(--chip); color: var(--text);
+           border-radius: 7px; padding: 6px 12px; cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { color: var(--bad); }
+  button:disabled { opacity: .5; cursor: default; }
+  a { color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 6px; border-top: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+       border-top: none; }
+  .chip { display: inline-block; padding: 1px 8px; margin: 2px 4px 2px 0; border-radius: 10px;
+          background: var(--chip); font-size: 13px; }
+  .chip.charger { outline: 1px solid var(--ok); }
+  .badge { font-size: 12px; padding: 1px 8px; border-radius: 10px; background: var(--chip);
+           color: var(--muted); font-weight: 600; }
+  .badge.run { background: var(--ok); color: #fff; }
+  select { font: inherit; padding: 4px 6px; border-radius: 6px; border: 1px solid var(--line);
+           background: var(--card); color: var(--text); }
+  code, pre { font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  pre { background: var(--chip); padding: 10px 12px; border-radius: 7px; overflow-x: auto;
+        margin: 8px 0; white-space: pre-wrap; word-break: break-all; }
+  .sites { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+  .site { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; display: flex;
+          flex-direction: column; }
+  .site.active { border-color: var(--ok); box-shadow: 0 0 0 1px var(--ok); }
+  .site img { width: 100%; height: 220px; object-fit: contain; background: #fafafa;
+              border-bottom: 1px solid var(--line); }
+  .site .body { padding: 10px 12px; display: grid; gap: 6px; flex: 1; }
+  .site .title { display: flex; gap: 8px; align-items: center; font-weight: 700; font-size: 16px; }
+  .site .actions { display: flex; gap: 8px; padding: 0 12px 12px; }
+  .warning { color: var(--warn); font-size: 13px; }
+  .message { padding: 10px 14px; border-radius: 8px; margin-top: 10px; }
+  .message.ok { background: color-mix(in srgb, var(--ok) 14%, transparent); }
+  .message.bad { background: color-mix(in srgb, var(--bad) 14%, transparent); }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; margin-right: 14px; font-size: 13px; }
+  .legend i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  @media (max-width: 640px) { header { padding: 12px 16px; } td.places { max-width: 140px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>RMF sites</h1>
+  <span class="status" id="rmf"><span class="dot"></span><span>…</span></span>
+  <span class="spacer"></span>
+  <a href="http://localhost:3000" target="_blank" rel="noopener">Open the RMF dashboard ↗</a>
+</header>
+<main>
+  <section id="access-card">
+    <h2>Rover</h2>
+    <div id="access">Checking…</div>
+  </section>
+
+  <section>
+    <h2>Maps on the rover <button id="refresh-maps">Refresh</button></h2>
+    <p class="muted" style="margin-top:0">Maps saved with the drive UI in indoor mode. A map
+      needs at least two places; the charger is where the rover parks. Importing a map again
+      replaces its site.</p>
+    <div id="maps">Loading…</div>
+    <div id="import-result"></div>
+  </section>
+
+  <section>
+    <h2>RMF sites</h2>
+    <p class="legend muted" style="margin-top:0">
+      <span><i style="background:#2860d8"></i>lane</span>
+      <span><i style="background:#f08c14"></i>place</span>
+      <span><i style="background:#1eaa46"></i>charger</span>
+      Activate restarts RMF on the site (about 10 s); reload the dashboard afterwards.
+    </p>
+    <div class="sites" id="sites"></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let status = null;
+
+async function api(method, path, body) {
+  const res = await fetch(path, {method, headers: {'Content-Type': 'application/json'},
+                                 body: body ? JSON.stringify(body) : undefined});
+  const data = await res.json().catch(() => ({error: `HTTP ${res.status}`}));
+  if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+function ago(seconds) {
+  const d = Date.now() / 1000 - seconds;
+  if (d < 90) return 'just now';
+  if (d < 5400) return `${Math.round(d / 60)} min ago`;
+  if (d < 172800) return `${Math.round(d / 3600)} h ago`;
+  return new Date(seconds * 1000).toLocaleDateString();
+}
+
+function renderRmf() {
+  const rmf = status.rmf || {}, wanted = status.active || rmf.site;
+  let cls = 'bad', text = 'RMF is not running';
+  if (rmf.state === 'running' && (!status.active || rmf.site === status.active)) {
+    cls = 'ok'; text = `RMF runs site ${rmf.site} (since ${ago(rmf.started)})`;
+  } else if (wanted) {
+    cls = 'warn'; text = `RMF is switching to site ${wanted}…`;
+  }
+  if (rmf.error) { cls = 'bad'; text += ` — ${rmf.error}`; }
+  $('rmf').innerHTML = `<span class="dot ${cls}"></span><span>${esc(text)}</span>`;
+}
+
+function renderAccess() {
+  const a = status.access;
+  let html;
+  if (a.state === 'ok') {
+    html = `<span class="status"><span class="dot ok"></span>Connected to ${esc(a.source)}</span>
+            <span class="muted"> · imported sites use the rover's broker ${esc(status.broker)}</span>`;
+  } else if (a.state === 'needs_key') {
+    html = `<span class="status"><span class="dot warn"></span>The rover does not know this page's key yet</span>
+      <p>Run this once in a terminal on this laptop, in <code>src/rover_rmf</code>, and type the
+         rover's root password when asked:</p>
+      <pre>docker compose -f docker/docker-compose.yml exec site-manager rover-authorize</pre>
+      <p class="muted">A new rover release (balena push) forgets the key; run it again then.</p>`;
+  } else {
+    html = `<span class="status"><span class="dot bad"></span>Cannot reach ${esc(a.source)}</span>
+      <p class="muted">${esc(a.detail || '')}</p>
+      <p class="muted">Is the laptop on the rover network (192.168.1.x or the ROVER-A1 access point),
+         and is the rover on?</p>`;
+  }
+  $('access').innerHTML = html;
+}
+
+function renderSites() {
+  const running = (status.rmf || {}).site, active = status.active || running;
+  $('sites').innerHTML = status.sites.map((s) => {
+    const isActive = s.name === active;
+    const img = s.builtin ? `/sites/${encodeURIComponent(s.name)}/floorplan.png`
+                          : `/sites/${encodeURIComponent(s.name)}/preview.png?t=${s.modified}`;
+    const imp = s.import || {};
+    const warnings = (imp.warnings || []).map((w) => `<div class="warning">⚠ ${esc(w)}</div>`).join('');
+    const places = s.waypoints.map((w) => `<span class="chip ${w === s.charger ? 'charger' : ''}">${esc(w)}</span>`).join('');
+    return `<div class="site ${isActive ? 'active' : ''}">
+      <img src="${img}" alt="Floor plan of ${esc(s.name)}" loading="lazy">
+      <div class="body">
+        <div class="title">${esc(s.name)}
+          ${isActive ? `<span class="badge run">${running === s.name ? 'running' : 'starting'}</span>` : ''}
+          <span class="badge">${s.builtin ? 'built in' : 'imported ' + ago(s.modified)}</span></div>
+        <div>${places}</div>
+        <div class="muted">${s.waypoints.length} places · ${s.lanes} lanes${s.charger ? ` · charger ${esc(s.charger)}` : ''}</div>
+        ${warnings}
+      </div>
+      <div class="actions">
+        <button class="primary" data-activate="${esc(s.name)}" ${isActive ? 'disabled' : ''}>Activate</button>
+        ${s.builtin ? '' : `<button class="danger" data-delete="${esc(s.name)}" ${isActive ? 'disabled' : ''}>Delete</button>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function refreshStatus() {
+  try {
+    status = await api('GET', '/api/status');
+    renderRmf(); renderAccess(); renderSites();
+  } catch (e) {
+    $('rmf').innerHTML = `<span class="dot bad"></span><span>Site manager unreachable: ${esc(e.message)}</span>`;
+  }
+}
+
+async function refreshMaps() {
+  $('maps').textContent = 'Loading…';
+  try {
+    const maps = await api('GET', '/api/rover/maps');
+    if (!maps.length) { $('maps').innerHTML = '<p class="muted">No maps saved on the rover yet.</p>'; return; }
+    $('maps').innerHTML = `<table><thead><tr><th>Map</th><th>Places</th><th>Charger</th><th></th></tr></thead><tbody>` +
+      maps.map((m) => {
+        const guess = m.places.find((p) => p.toLowerCase() === 'dock') || m.places[0] || '';
+        const options = m.places.map((p) => `<option ${p === guess ? 'selected' : ''}>${esc(p)}</option>`).join('');
+        const ready = m.has_map && m.places.length >= 2;
+        const hint = !m.has_map ? 'no map image' : m.places.length < 2 ? `save ${2 - m.places.length} more place(s) in the drive UI` : '';
+        return `<tr><td><b>${esc(m.name)}</b>${m.active ? ' <span class="badge">loaded on the rover</span>' : ''}
+                  <div class="muted">${m.modified ? 'saved ' + ago(m.modified) : ''}</div></td>
+                <td class="places">${m.places.map((p) => `<span class="chip">${esc(p)}</span>`).join('') || '<span class="muted">none</span>'}</td>
+                <td>${m.places.length ? `<select id="charger-${esc(m.name)}">${options}</select>` : ''}</td>
+                <td><button class="primary" data-import="${esc(m.name)}" ${ready ? '' : 'disabled'}>Import</button>
+                  ${hint ? `<div class="muted">${esc(hint)}</div>` : ''}</td></tr>`;
+      }).join('') + '</tbody></table>';
+  } catch (e) {
+    $('maps').innerHTML = `<p class="warning">${esc(e.message)}</p>`;
+  }
+}
+
+async function importMap(name, button) {
+  const charger = ($(`charger-${name}`) || {}).value;
+  button.disabled = true; button.textContent = 'Importing…';
+  $('import-result').innerHTML = '';
+  try {
+    const r = await api('POST', '/api/import', {name, charger});
+    const warnings = r.warnings.map((w) => `<div class="warning">⚠ ${esc(w)}</div>`).join('');
+    $('import-result').innerHTML = `<div class="message ok"><b>${esc(name)}</b> imported:
+      ${r.waypoints.length} places, ${r.lanes.length} lanes, charger ${esc(r.charger)}.
+      ${r.active ? 'RMF runs this site, so it restarts on the new version now.' : 'Activate it below to run RMF on it.'}
+      ${warnings}</div>`;
+    await refreshStatus();
+  } catch (e) {
+    $('import-result').innerHTML = `<div class="message bad">Import of <b>${esc(name)}</b> failed: ${esc(e.message)}</div>`;
+  } finally {
+    button.disabled = false; button.textContent = 'Import';
+  }
+}
+
+document.addEventListener('click', async (event) => {
+  const b = event.target.closest('button');
+  if (!b) return;
+  try {
+    if (b.id === 'refresh-maps') await refreshMaps();
+    else if (b.dataset.import) await importMap(b.dataset.import, b);
+    else if (b.dataset.activate) { b.disabled = true; await api('POST', '/api/activate', {name: b.dataset.activate}); await refreshStatus(); }
+    else if (b.dataset.delete && confirm(`Delete the site ${b.dataset.delete}? The map on the rover stays.`)) {
+      await api('DELETE', `/api/sites/${encodeURIComponent(b.dataset.delete)}`); await refreshStatus();
+    }
+  } catch (e) { alert(e.message); b.disabled = false; }
+});
+
+refreshStatus(); refreshMaps();
+setInterval(refreshStatus, 3000);
+</script>
+</body>
+</html>

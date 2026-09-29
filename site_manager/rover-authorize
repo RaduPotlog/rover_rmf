@@ -1,0 +1,19 @@
+#!/bin/bash
+# Copyright 2026 Rover A1 contributors
+# Licensed under the Apache License, Version 2.0.
+#
+# Lets the RMF site manager read the rover's maps: installs its ssh key on the rover's
+# orchestrator container. Asks for the rover's root password once.
+#
+#   docker compose -f docker/docker-compose.yml exec site-manager rover-authorize
+#
+# The key stays in the site-manager-ssh volume. The rover forgets it when its orchestrator
+# container is recreated (a new release); run this again then.
+set -e
+TARGET="${ROVER_SSH:-root@192.168.1.201}"
+PORT="${ROVER_SSH_PORT:-24}"
+KEY="$HOME/.ssh/id_ed25519"
+[ -f "$KEY" ] || ssh-keygen -q -t ed25519 -N '' -C rover-rmf-site-manager -f "$KEY"
+echo "Installing the site manager's key on $TARGET (ssh port $PORT)."
+ssh-copy-id -i "$KEY.pub" -p "$PORT" -o StrictHostKeyChecking=accept-new "$TARGET"
+ssh -p "$PORT" -o BatchMode=yes "$TARGET" true && echo "Done: the RMF sites page can now read the rover's maps."

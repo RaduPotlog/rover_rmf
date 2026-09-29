@@ -33,15 +33,21 @@ def _yaml_name(name: str) -> str:
     return name if re.fullmatch(r'[A-Za-z0-9_-]+', name) else json.dumps(name)
 
 
-def write_png(path: str, image: Sequence[Sequence[int]]) -> None:
-    """8-bit greyscale PNG from rows of 0..255 values."""
+def write_png(path: str, image: Sequence[Sequence[int]], rgb: bool = False) -> None:
+    """
+    8-bit PNG from rows of values.
+
+    Greyscale by default (one 0..255 value per pixel). With rgb=True each row holds r, g, b
+    values in turn, three per pixel.
+    """
     raw = b''.join(b'\x00' + bytes(row) for row in image)
 
     def chunk(kind, data):
         body = kind + data
         return struct.pack('>I', len(data)) + body + struct.pack('>I', zlib.crc32(body))
 
-    header = struct.pack('>IIBBBBB', len(image[0]), len(image), 8, 0, 0, 0, 0)
+    width = len(image[0]) // 3 if rgb else len(image[0])
+    header = struct.pack('>IIBBBBB', width, len(image), 8, 2 if rgb else 0, 0, 0, 0)
     with open(path, 'wb') as f:
         f.write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', header)
                 + chunk(b'IDAT', zlib.compress(raw, 9)) + chunk(b'IEND', b''))

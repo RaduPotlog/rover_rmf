@@ -28,7 +28,8 @@ ROS distros never share a graph.
 | `rover_rmf_bringup` | `rover_rmf.launch.xml` (RMF core and the adapter; `site:=<site>`) and `config/fleet_<site>.yaml` (RMF fleet config plus the adapter's `vda5050` section). |
 | `docker/` | `Dockerfile.rmf` (Jazzy, RMF debs, builds and tests the packages), `docker-compose.yml` (mosquitto, rmf, rmf-web api-server and dashboard), broker and api-server configs. `Dockerfile.dashboard` points the prebuilt dashboard at the api-server's published port. |
 | `scripts/start_sim_rover.sh` | Starts the simulated rover's side in one terminal: Nav 2, drive mode, mission manager and the VDA 5050 connector on `:1884`. It then sets the drive mode to AUTOMATIC. `--localization indoor` behaves like the real rover. |
-| `scripts/import_rover_map.py` | Turns a map saved on the rover (drive UI, indoor mode) into an RMF site. See "Real rover". |
+| `site_manager/` | The RMF sites page (<http://localhost:8020>, compose service `site-manager`): lists the maps saved on the rover, imports them as sites into the `rmf-sites` volume, and activates one. `docker/run_rmf.sh` runs RMF for the active site and restarts it on a switch. |
+| `scripts/import_rover_map.py` | The same import from the command line, writing into the repo so a site can be committed. |
 
 ## How a command reaches the rover
 
@@ -102,6 +103,11 @@ Then:
 
   The dashboard's task panel can create the same task.
 - **Watching the VDA traffic:** `mosquitto_sub -p 1884 -t 'uagv/v2/#' -v`
+- **The whole real-rover flow in the sim:** run `start_sim_rover.sh --localization indoor`,
+  then map and save the map and its places with the indoor manager's services.
+  - Start the stack with `-f docker/docker-compose.sim-maps.yml` added, so the sites page reads
+    `~/rover_maps` instead of the rover's `/maps`.
+  - On <http://localhost:8020>, import and activate the map, as on the real rover.
 
 **Zenoh:** `start_sim_rover.sh` runs everything except Nav 2 as zenoh clients. A peer that
 exits, such as a restarted connector, stalls `slam_toolbox`'s links, and the map frame
@@ -141,19 +147,30 @@ drive UI, and that map becomes the RMF site.
    mosquitto_sub -h 192.168.1.201 -t 'uagv/v2/#' -v   # connection ONLINE, state mapId "lab"
    ros2 run rover_vda5050_bringup fake_master.py --host 192.168.1.201 order <x>,<y>   # a short hop
    ```
-5. **Import the map and run RMF:**
+5. **Start the stack and let it read the rover's maps.**
    ```bash
-   scripts/import_rover_map.py lab --from-rover root@192.168.1.201   # ssh port 24, one password prompt
-   RMF_SITE=lab RMF_BROKER_HOST=192.168.1.201 \
-       docker compose -f docker/docker-compose.yml up -d --build
+   docker compose -f docker/docker-compose.yml up -d --build
+   docker compose -f docker/docker-compose.yml exec site-manager rover-authorize   # once; password root
    ```
-   - The importer prints the lanes and the transform, and warns about places too close to
-     obstacles.
-   - If the places can't all be joined by clear straight lanes, it fails and names the groups.
-     Add a place where the corridors meet.
-   - Re-run it after changing the map or its places, then rebuild.
-6. **On the dashboard** (http://localhost:3000), `rover_a1` appears at `dock` on the `lab` map.
-   Start with a patrol between two places.
+   `rover-authorize` puts the sites page's own ssh key on the rover, which asks for its
+   password once. A new rover release forgets the key; the page then says so, and you run the
+   command again.
+6. **Import and activate the map** on the RMF sites page, <http://localhost:8020>.
+   - **Maps on the rover** lists the saved maps with their places. Pick the charger place
+     (default `dock`) and press **Import**.
+   - The site appears under **RMF sites** with a preview: lanes in blue, places in orange, the
+     charger in green. Warnings name places too close to obstacles.
+   - If the places can't all be joined by clear straight lanes, the import fails and names the
+     groups. Add a place where the corridors meet, then import again.
+   - Press **Activate**: RMF restarts on the site within a few seconds, with no rebuild.
+     Importing the running site again restarts RMF on the new version.
+7. **On the dashboard** (<http://localhost:3000>, reload it after a site switch), `rover_a1`
+   appears at `dock` on the `lab` map. Start with a patrol between two places.
+
+Sites imported on the page live in the `rmf-sites` Docker volume. To keep a site in the repo
+(built into the image), import it with the CLI and commit the result:
+`scripts/import_rover_map.py lab --from-rover root@192.168.1.201`. It uses ssh port 24 and asks
+for the password once. An imported site with the same name overrides a built-in one.
 
 **First runs, safety:**
 - Keep the RC transmitter / E-stop at hand and use a clear area.
@@ -171,8 +188,9 @@ drive UI, and that map becomes the RMF site.
 ```bash
 colcon build --packages-select rover_rmf_fleet_adapter --cmake-args -DBUILD_TESTING=ON
 colcon test --packages-select rover_rmf_fleet_adapter && colcon test-result --verbose
-cd rover_rmf_maps && python3 -m pytest test   # the map importer (rover_rmf_maps needs RMF's
-                                              # building map tools to build with colcon)
+(cd rover_rmf_maps && python3 -m pytest test)  # map importer, map sources, preview (colcon
+                                               # needs RMF's building map tools for this one)
+python3 -m pytest site_manager/test            # the sites page's server and API
 ```
 
 These unit tests run on the host without RMF. The image build runs them again under Jazzy.

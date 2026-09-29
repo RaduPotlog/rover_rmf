@@ -1,0 +1,14 @@
+# Simulated rover in indoor mode: the RMF sites page reads the maps start_sim_rover.sh
+# --localization indoor saves in ~/rover_maps (its --maps-dir), instead of the rover's over ssh.
+#
+#   docker compose -f docker/docker-compose.yml -f docker/docker-compose.sim-maps.yml up -d
+#
+# Sites imported this way still point at the rover's broker unless ROVER_BROKER says otherwise;
+# the simulated rover's connector uses this stack's mosquitto.
+services:
+  site-manager:
+    environment:
+      MAPS_DIR: /rover_maps
+      ROVER_BROKER: mosquitto:1883
+    volumes:
+      - ${ROVER_MAPS_DIR:-~/rover_maps}:/rover_maps:ro
