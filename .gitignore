@@ -4,3 +4,10 @@ __pycache__/
 build/
 install/
 log/
+
+# Sites imported from the rover (scripts/import_rover_map.py) stay local, like those the RMF
+# sites page keeps in the rmf-sites volume. Only the Gazebo site rover_world is tracked.
+rover_rmf_maps/maps/*
+!rover_rmf_maps/maps/rover_world/
+rover_rmf_bringup/config/fleet_*.yaml
+!rover_rmf_bringup/config/fleet_rover_world.yaml

@@ -29,7 +29,7 @@ ROS distros never share a graph.
 | `docker/` | `Dockerfile.rmf` (Jazzy, RMF debs, builds and tests the packages), `docker-compose.yml` (mosquitto, rmf, rmf-web api-server and dashboard), broker and api-server configs. `Dockerfile.dashboard` points the prebuilt dashboard at the api-server's published port. |
 | `scripts/start_sim_rover.sh` | Starts the simulated rover's side in one terminal: Nav 2, drive mode, mission manager and the VDA 5050 connector on `:1884`. It then sets the drive mode to AUTOMATIC. `--localization indoor` behaves like the real rover. |
 | `site_manager/` | The RMF sites page (<http://localhost:8020>, compose service `site-manager`): lists the maps saved on the rover, imports them as sites into the `rmf-sites` volume, and activates one. `docker/run_rmf.sh` runs RMF for the active site and restarts it on a switch. |
-| `scripts/import_rover_map.py` | The same import from the command line, writing into the repo so a site can be committed. |
+| `scripts/import_rover_map.py` | The same import from the command line, into `rover_rmf_maps/maps/` (git-ignored, built into the local image). |
 
 ## How a command reaches the rover
 
@@ -167,10 +167,12 @@ drive UI, and that map becomes the RMF site.
 7. **On the dashboard** (<http://localhost:3000>, reload it after a site switch), `rover_a1`
    appears at `dock` on the `lab` map. Start with a patrol between two places.
 
-Sites imported on the page live in the `rmf-sites` Docker volume. To keep a site in the repo
-(built into the image), import it with the CLI and commit the result:
-`scripts/import_rover_map.py lab --from-rover root@192.168.1.201`. It uses ssh port 24 and asks
-for the password once. An imported site with the same name overrides a built-in one.
+Sites imported on the page live in the `rmf-sites` Docker volume. The CLI,
+`scripts/import_rover_map.py lab --from-rover root@192.168.1.201`, does the same import into
+`rover_rmf_maps/maps/lab/` and `config/fleet_lab.yaml`. It uses ssh port 24 and asks for the
+password once. Those files are built into the image made on this machine, but git ignores them:
+maps imported from the rover are not committed; only the Gazebo site `rover_world` is. A page
+import with the same name overrides a built-in site.
 
 **First runs, safety:**
 - Keep the RC transmitter / E-stop at hand and use a clear area.

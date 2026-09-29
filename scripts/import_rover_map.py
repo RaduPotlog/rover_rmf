@@ -94,7 +94,7 @@ def main():
     for w in site.warnings:
         print(f'  WARNING: {w}')
     print(f'Wrote {os.path.relpath(out, REPO)}/ and {os.path.relpath(config_path, REPO)}')
-    print(f'Next: commit it, or RMF_SITE={args.name} '
+    print(f'Next (not committed: git ignores imported maps): RMF_SITE={args.name} '
           'docker compose -f docker/docker-compose.yml up -d --build')
 
 

@@ -10,7 +10,7 @@ RMF site manager: a small web page that turns maps saved on the rover into RMF s
 It lists the maps rover_indoor_nav_manager saved on the rover. Import turns one into a site in
 the rmf-sites volume: floor plan, building, nav graph, fleet config and a preview with the
 lanes. Activate writes the site's name to <sites>/active; docker/run_rmf.sh, which runs RMF,
-restarts RMF on it. Built-in sites (rover_world and those committed to rover_rmf_maps) can be
+restarts RMF on it. Built-in sites (rover_world, and CLI imports in rover_rmf_maps) can be
 activated too.
 
 Environment:

@@ -4,7 +4,7 @@
 #
 # Then pick the site at http://localhost:8020 (RMF sites page): it imports maps saved on the rover
 # and switches RMF between sites without a rebuild. Sites live in the rmf-sites volume
-# (imported) and in rover_rmf_maps (built in: rover_world, the Gazebo world, and committed ones).
+# (imported) and in rover_rmf_maps (built in: rover_world, the Gazebo world, plus local CLI imports).
 # Each site's fleet config names the broker: this stack's mosquitto for the Gazebo rover, the
 # rover's own (192.168.1.201:1883) for imported sites.
 #
