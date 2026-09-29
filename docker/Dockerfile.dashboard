@@ -1,0 +1,12 @@
+# rmf-web demo dashboard pointed at the api-server's published port.
+#
+# The upstream image compiles apiServerUrl="http://localhost:8000" into its bundle, and on this
+# box a Windows service holds port 8000 (see docker-compose.yml). Rewrite the URL; the last check
+# fails the build if a new upstream bundle no longer contains the string.
+FROM ghcr.io/open-rmf/rmf-web/demo-dashboard:jazzy-nightly
+
+ARG API_URL=http://localhost:8010
+RUN grep -rl 'http://localhost:8000' /opt/dashboard \
+        | xargs sed -i "s#http://localhost:8000#${API_URL}#g" \
+    && ! grep -rq 'http://localhost:8000' /opt/dashboard \
+    && grep -rq "${API_URL}" /opt/dashboard

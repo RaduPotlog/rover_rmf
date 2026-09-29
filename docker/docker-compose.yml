@@ -2,9 +2,14 @@
 #
 #   docker compose -f docker/docker-compose.yml up --build
 #
-# Dashboard http://localhost:3000, api-server :8000, MQTT broker for the rover on host :1884
+# Dashboard http://localhost:3000, api-server :8010, MQTT broker for the rover on host :1884
 # (:1884 because the host may run its own mosquitto on 1883). All ROS traffic stays on this
 # compose network (rmw_cyclonedds_cpp), apart from the rover's ROS 2 Lyrical graph.
+#
+# The api-server is published on RMF_API_PORT (default 8010), not upstream's 8000: a Windows
+# service (Manager.exe) holds 0.0.0.0:8000 on this box, Docker Desktop then silently publishes
+# nothing and the dashboard's login goes to that service. The dashboard image is rebuilt with
+# the same port (Dockerfile.dashboard). Inside this network RMF still uses api-server:8000.
 name: rover-rmf
 
 services:
@@ -21,14 +26,20 @@ services:
     environment:
       RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
       RMF_API_SERVER_CONFIG: /config/api_server_config.py
+      RMF_API_PUBLIC_URL: http://localhost:${RMF_API_PORT:-8010}
     volumes:
       - ./api_server_config.py:/config/api_server_config.py:ro
     ports:
-      - "8000:8000"
+      - "${RMF_API_PORT:-8010}:8000"
     restart: unless-stopped
 
   dashboard:
-    image: ghcr.io/open-rmf/rmf-web/demo-dashboard:jazzy-nightly
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+      args:
+        API_URL: http://localhost:${RMF_API_PORT:-8010}
+    image: rover-rmf-dashboard:jazzy
     ports:
       - "3000:3000"
     restart: unless-stopped

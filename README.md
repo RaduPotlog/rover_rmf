@@ -7,7 +7,7 @@ container, because RMF's fleet adapter, dispatcher and websocket have no Lyrical
 ROS distros never share a graph.
 
 ```
- Browser ── rmf-web dashboard :3000 ── api-server :8000
+ Browser ── rmf-web dashboard :3000 ── api-server :8010
                                           │ ROS 2 Jazzy, rmw_cyclonedds, compose network only
  ┌─ docker compose (docker/) ─────────────┴────────────────────────────────────────┐
  │ rmf_traffic_schedule · blockade · rmf_task_dispatcher · building_map_server      │
@@ -26,7 +26,7 @@ ROS distros never share a graph.
 | `rover_rmf_fleet_adapter` | EasyFullControl fleet adapter. `domain/` holds the VDA 5050 messages, the state parsing and the command tracker. `application/` holds `RobotSession`. `infrastructure/` holds the paho link and the RMF binding. `presentation/` is the entry point. Only `infrastructure/` and `presentation/` import RMF, ROS or paho, and `scripts/check_domain_purity.sh` enforces it. |
 | `rover_rmf_maps` | The Gazebo world `rover_world.sdf` as an RMF building (level `L1`): the floor plan, 9 waypoints (`rover_a1_charger`, `north`, `northeast`, …) and 11 two-way lanes. The nav graph is generated at build time. |
 | `rover_rmf_bringup` | `rover_rmf.launch.xml` (RMF core and the adapter) and `config/rover_fleet.yaml` (RMF fleet config plus the adapter's `vda5050` section). |
-| `docker/` | `Dockerfile.rmf` (Jazzy, RMF debs, builds and tests the packages), `docker-compose.yml` (mosquitto, rmf, rmf-web api-server and dashboard), broker and api-server configs. |
+| `docker/` | `Dockerfile.rmf` (Jazzy, RMF debs, builds and tests the packages), `docker-compose.yml` (mosquitto, rmf, rmf-web api-server and dashboard), broker and api-server configs. `Dockerfile.dashboard` points the prebuilt dashboard at the api-server's published port. |
 | `scripts/start_sim_rover.sh` | Starts the rover's side in one terminal: Nav 2, drive mode, mission manager and the VDA 5050 connector on `:1884`. It then sets the drive mode to AUTOMATIC. |
 
 ## How a command reaches the rover
@@ -106,6 +106,12 @@ disappears.
 **Ports:** the broker is published on **1884**, because the host may run its own mosquitto on
 1883. WSL 2 distros share the Docker Desktop VM's network, so the host-side connector reaches it
 on `127.0.0.1:1884`.
+
+The api-server is published on **8010** (`RMF_API_PORT`), not upstream's 8000. A Windows service
+(`Manager.exe`) holds `0.0.0.0:8000` on this box. Docker Desktop then silently publishes nothing,
+and the dashboard's LOGIN goes to that service and hangs. The dashboard image is rebuilt with the
+same port. To pick another port, run
+`RMF_API_PORT=<port> docker compose -f docker/docker-compose.yml up -d --build`.
 
 ## Tests
 
