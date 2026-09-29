@@ -1,4 +1,5 @@
-# Open-RMF fleet config for Rover A1 (EasyFullControl, rmf_fleet_adapter Jazzy) plus the
+# Open-RMF fleet config for Rover A1 in the Gazebo world (site rover_world; EasyFullControl,
+# rmf_fleet_adapter Jazzy) plus the
 # vda5050 section read by rover_rmf_fleet_adapter. Every value names its source; ASSUMPTION
 # marks a guess that only shapes RMF's time/energy estimates, not how the rover drives (Nav 2
 # does that, with rover_navigation/config/rover_nav_params.yaml).
@@ -54,9 +55,9 @@ rmf_fleet:
   # RMF map -> robot frame, per RMF map (level). rover_rmf_maps puts RMF (x, y) at world
   # (x - 12.5, y + 12.5); the simulated rover localizes with SLAM, whose map frame starts at the
   # spawn pose, world (0, -2) with yaw 0 (rover_gazebo simulate_robot.launch.py). So
-  # robot = RMF + (-12.5, 14.5). A real site needs its own survey here.
+  # robot = RMF + (-12.5, 14.5). Real sites get theirs from scripts/import_rover_map.py.
   transforms:
-    L1:
+    rover_world:
       rotation: 0.0
       scale: 1.0
       translation: [-12.5, 14.5]
@@ -74,7 +75,7 @@ vda5050:
     username: ""
     password: ""
   # RMF map name reported while the rover's mapId is empty (connector.yaml rover.map_id "").
-  map_name: "L1"
+  map_name: "rover_world"
   # Reported as the state of charge when the rover has no battery reading (0 % and 0 V).
   unknown_battery_soc: 1.0
   accept_timeout: 10.0     # s; the connector publishes state every 1 s and on events

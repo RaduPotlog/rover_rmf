@@ -5,7 +5,11 @@
 # The simulated rover's side of the Open-RMF demo, in one terminal. Start Gazebo first
 # (rover_ros/rover_gazebo/scripts/rover_sim.sh), then:
 #
-#   start_sim_rover.sh [--broker-port 1884] [--localization slam]
+#   start_sim_rover.sh [--broker-port 1884] [--localization slam|indoor|...] [--maps-dir DIR]
+#
+# --localization indoor runs rover_indoor_nav_manager like the real rover (save a map and places,
+# then scripts/import_rover_map.py NAME --dir DIR/NAME); --maps-dir is where it keeps them
+# (default ~/rover_maps; the rover uses /maps).
 #
 # It starts, in the rover_sim.sh environment (rmw_zenoh, local router, namespace `rover`):
 #   - rover_navigation bringup (Nav 2, use_sim_time, SLAM by default)
@@ -17,11 +21,13 @@ set -eo pipefail
 
 BROKER_PORT=1884
 LOCALIZATION=slam
+MAPS_DIR="$HOME/rover_maps"
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --broker-port) BROKER_PORT="$2"; shift 2 ;;
         --localization) LOCALIZATION="$2"; shift 2 ;;
-        -h | --help) sed -n '5,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        --maps-dir) MAPS_DIR="$2"; shift 2 ;;
+        -h | --help) sed -n '5,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         *) echo "unknown argument: $1" >&2; exit 2 ;;
     esac
 done
@@ -86,8 +92,9 @@ trap stop_all INT TERM EXIT
 # (seen 2026-09-29 when restarting the connector). Clients leave the peer mesh alone.
 ZENOH_CLIENT='mode="client";connect/endpoints=["tcp/127.0.0.1:7447"];listen/endpoints=[]'
 
+mkdir -p "$MAPS_DIR"
 start navigation ros2 launch rover_navigation bringup.launch.py \
-    namespace:="$NS" use_sim_time:=True localization_source:="$LOCALIZATION"
+    namespace:="$NS" use_sim_time:=True localization_source:="$LOCALIZATION" maps_dir:="$MAPS_DIR"
 start drive_mode env ZENOH_CONFIG_OVERRIDE="$ZENOH_CLIENT" \
     ros2 launch rover_drive_mode rover_drive_mode.launch.py namespace:="$NS" use_sim_time:=True
 start mission_manager env ZENOH_CONFIG_OVERRIDE="$ZENOH_CLIENT" \

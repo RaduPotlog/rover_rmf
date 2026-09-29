@@ -4,7 +4,7 @@
 """
 Entry point: an Open-RMF EasyFullControl fleet adapter that drives rovers over VDA 5050 / MQTT.
 
-    fleet_adapter -c rover_fleet.yaml -n nav_graphs/0.yaml [--broker-host H] [--broker-port P]
+    fleet_adapter -c fleet_<site>.yaml -n nav_graphs/0.yaml [--broker-host H] [--broker-port P]
                   [-sim] --ros-args -p server_uri:=ws://api-server:8000/_internal
 
 Same arguments as rmf_demos_fleet_adapter, plus the broker. The fleet config holds RMF's

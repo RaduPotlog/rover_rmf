@@ -4,7 +4,7 @@ coordinate_system: reference_image
 lifts: {}
 name: rover_world
 levels:
-  L1:
+  rover_world:
     drawing:
       filename: rover_world.png
     elevation: 0

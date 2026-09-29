@@ -28,7 +28,8 @@ COPY rover_rmf_bringup src/rover_rmf/rover_rmf_bringup
 
 RUN . /opt/ros/jazzy/setup.sh \
     && colcon build --event-handlers console_direct- \
-    && colcon test --packages-select rover_rmf_fleet_adapter --event-handlers console_direct- \
+    && colcon test --packages-select rover_rmf_fleet_adapter rover_rmf_maps \
+        --event-handlers console_direct- \
     && colcon test-result --verbose
 
 # Same RMW as the rmf-web api-server image (rmw_cyclonedds_cpp).

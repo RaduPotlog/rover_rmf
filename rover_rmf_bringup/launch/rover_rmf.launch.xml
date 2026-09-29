@@ -6,10 +6,14 @@
 -->
 <launch>
   <arg name="use_sim_time" default="false" description="RMF runs on wall time; the rover's sim clock never reaches it"/>
-  <arg name="building_file" default="$(find-pkg-share rover_rmf_maps)/maps/rover_world/rover_world.building.yaml"/>
-  <arg name="nav_graph_file" default="$(find-pkg-share rover_rmf_maps)/maps/rover_world/nav_graphs/0.yaml"/>
-  <arg name="config_file" default="$(find-pkg-share rover_rmf_bringup)/config/rover_fleet.yaml"/>
-  <arg name="initial_map" default="L1"/>
+  <!-- A site is a building in rover_rmf_maps/maps/<site>/ (level named <site>, which is also the
+       rover's map name / VDA mapId) plus config/fleet_<site>.yaml. rover_world is the Gazebo
+       world; real sites come from scripts/import_rover_map.py. -->
+  <arg name="site" default="rover_world"/>
+  <arg name="building_file" default="$(find-pkg-share rover_rmf_maps)/maps/$(var site)/$(var site).building.yaml"/>
+  <arg name="nav_graph_file" default="$(find-pkg-share rover_rmf_maps)/maps/$(var site)/nav_graphs/0.yaml"/>
+  <arg name="config_file" default="$(find-pkg-share rover_rmf_bringup)/config/fleet_$(var site).yaml"/>
+  <arg name="initial_map" default="$(var site)"/>
   <arg name="server_uri" default="" description="rmf-web api-server, e.g. ws://api-server:8000/_internal"/>
   <arg name="broker_host" default="mosquitto" description="MQTT broker the rover's VDA 5050 connector uses"/>
   <arg name="broker_port" default="1883"/>

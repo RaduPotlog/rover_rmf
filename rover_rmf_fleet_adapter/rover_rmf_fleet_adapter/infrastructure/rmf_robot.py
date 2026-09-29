@@ -27,6 +27,7 @@ class RmfRobot(RmfCommands):
         self._log = log
         self._session: Optional[RobotSession] = None
         self._update_handle = None
+        self._refused_map: Optional[str] = None
 
     def attach(self, session: RobotSession) -> None:
         self._session = session
@@ -49,8 +50,22 @@ class RmfRobot(RmfCommands):
             return
         rmf_state = rmf_easy.RobotState(state.map_name, list(state.position), state.battery_soc)
         if self._update_handle is None:
-            self._update_handle = self._fleet_handle.add_robot(
+            handle = self._fleet_handle.add_robot(
                 self._name, rmf_state, self._configuration, self._callbacks())
+            if handle is None:
+                # RMF refuses a robot whose map is not in the nav graph, e.g. the rover has
+                # another saved map loaded than the site RMF runs. Say so once per map name;
+                # keep retrying quietly, it registers as soon as the maps agree.
+                if self._refused_map != state.map_name:
+                    self._refused_map = state.map_name
+                    self._log.error(
+                        f'[{self._name}] RMF refused the robot: it is on map '
+                        f"{state.map_name!r}, which this site's nav graph does not have. Load "
+                        'the matching map on the rover, or start RMF with RMF_SITE=<that map> '
+                        '(imported with scripts/import_rover_map.py).')
+                return
+            self._update_handle = handle
+            self._refused_map = None
             self._log.info(f'[{self._name}] registered with RMF on {state.map_name} at '
                            f'({state.position[0]:.2f}, {state.position[1]:.2f})')
             return

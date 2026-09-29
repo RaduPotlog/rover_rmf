@@ -1,6 +1,13 @@
 # Open-RMF managing Rover A1 over VDA 5050 / MQTT (see ../README.md).
 #
-#   docker compose -f docker/docker-compose.yml up --build
+#   docker compose -f docker/docker-compose.yml up --build            # Gazebo rover
+#   RMF_SITE=lab RMF_BROKER_HOST=192.168.1.201 \
+#     docker compose -f docker/docker-compose.yml up -d --build        # real rover, site 'lab'
+#
+# RMF_SITE picks rover_rmf_maps/maps/<site>/ and config/fleet_<site>.yaml (real sites come from
+# scripts/import_rover_map.py; the image must be rebuilt after importing). RMF_BROKER_HOST/PORT
+# pick the MQTT broker the rover's connector uses: this stack's mosquitto for the simulated rover,
+# the rover's own broker for the real one.
 #
 # Dashboard http://localhost:3000, api-server :8010, MQTT broker for the rover on host :1884
 # (:1884 because the host may run its own mosquitto on 1883). All ROS traffic stays on this
@@ -57,9 +64,10 @@ services:
       - launch
       - rover_rmf_bringup
       - rover_rmf.launch.xml
+      - site:=${RMF_SITE:-rover_world}
       - server_uri:=ws://api-server:8000/_internal
-      - broker_host:=mosquitto
-      - broker_port:=1883
+      - broker_host:=${RMF_BROKER_HOST:-mosquitto}
+      - broker_port:=${RMF_BROKER_PORT:-1883}
     ports:
       - "8006:8006"   # schedule/trajectory websocket used by the dashboard's map
     restart: unless-stopped

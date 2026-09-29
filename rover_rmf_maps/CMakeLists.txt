@@ -27,4 +27,10 @@ endforeach()
 
 install(DIRECTORY maps/ DESTINATION share/${PROJECT_NAME}/maps)
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_pytest REQUIRED)
+  # scripts/import_rover_map.py's logic (rover_map_import.py): PGM/thresholds, transform, lanes.
+  ament_add_pytest_test(test_rover_map_import test/test_rover_map_import.py)
+endif()
+
 ament_package()
