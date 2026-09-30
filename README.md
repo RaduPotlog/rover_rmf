@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="icons/Logo-Arm-WhiteOrange-372x372-1.png" alt="Mechatronics Academy" width="140">
+</p>
+
 # rover_rmf — Open-RMF fleet management for Rover A1 over MQTT
 
 Open-RMF plans, schedules and dispatches tasks for Rover A1. The only link between the two is
