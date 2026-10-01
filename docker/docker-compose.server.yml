@@ -35,6 +35,7 @@ services:
     build:
       args:
         API_URL: http://${RMF_BIND_IP:-10.8.0.1}:${RMF_API_PORT:-8010}
+        TRAJECTORY_URL: http://${RMF_BIND_IP:-10.8.0.1}:8006
     ports: !override
       - "${RMF_BIND_IP:-10.8.0.1}:3000:3000"
 

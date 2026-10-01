@@ -1,12 +1,18 @@
-# rmf-web demo dashboard pointed at the api-server's published port.
+# rmf-web demo dashboard pointed at the api-server's and the trajectory server's published ports.
 #
-# The upstream image compiles apiServerUrl="http://localhost:8000" into its bundle, and on this
-# box a Windows service holds port 8000 (see docker-compose.yml). Rewrite the URL; the last check
-# fails the build if a new upstream bundle no longer contains the string.
+# The upstream image compiles apiServerUrl="http://localhost:8000" and
+# trajectoryServerUrl="http://localhost:8006" into its bundle. On the laptop a Windows service
+# holds port 8000 (see docker-compose.yml); on the server both live on its WireGuard address
+# (docker-compose.server.yml). Rewrite both; the checks fail the build if a new upstream bundle
+# no longer contains the strings.
 FROM ghcr.io/open-rmf/rmf-web/demo-dashboard:jazzy-nightly
 
 ARG API_URL=http://localhost:8010
+ARG TRAJECTORY_URL=http://localhost:8006
 RUN grep -rl 'http://localhost:8000' /opt/dashboard \
         | xargs sed -i "s#http://localhost:8000#${API_URL}#g" \
     && ! grep -rq 'http://localhost:8000' /opt/dashboard \
-    && grep -rq "${API_URL}" /opt/dashboard
+    && grep -rq "${API_URL}" /opt/dashboard \
+    && grep -rlF 'trajectoryServerUrl:"http://localhost:8006"' /opt/dashboard \
+        | xargs sed -i "s#trajectoryServerUrl:\"http://localhost:8006\"#trajectoryServerUrl:\"${TRAJECTORY_URL}\"#g" \
+    && grep -rqF "trajectoryServerUrl:\"${TRAJECTORY_URL}\"" /opt/dashboard
