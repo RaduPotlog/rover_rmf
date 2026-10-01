@@ -10,7 +10,7 @@ from rover_rmf_fleet_adapter.application.ports import FleetLink, Log, RmfCommand
 from rover_rmf_fleet_adapter.application.robot_session import RobotSession
 from rover_rmf_fleet_adapter.domain.command_tracker import CommandTracker
 from rover_rmf_fleet_adapter.domain.model import Pose2D
-from rover_rmf_fleet_adapter.domain.robot_status import RobotStatus
+from rover_rmf_fleet_adapter.domain.robot_status import RobotStatus, VdaError
 
 
 class FakeLink(FleetLink):
@@ -41,12 +41,13 @@ class FakeRmf(RmfCommands):
 class QuietLog(Log):
     def __init__(self):
         self.errors = []
+        self.warnings = []
 
     def info(self, message):
         pass
 
     def warning(self, message):
-        pass
+        self.warnings.append(message)
 
     def error(self, message):
         self.errors.append(message)
@@ -114,7 +115,13 @@ def test_failure_asks_rmf_to_replan(wired):
     session.navigate('exec-1', Pose2D(3, 0), None, 0.0)
     session.on_state(at(0, 0, order_id='o1', node_ids=('o1-goal',)), 1.0)
     session.on_state(at(0, 0, order_id='o1', last_node_id='o1-start'), 2.0)
+    assert rmf.replans == 0  # not at once: after the backoff
+    session.tick(2.9)
+    assert rmf.replans == 0
+    session.tick(3.0)
     assert rmf.replans == 1 and rmf.finished_executions == []
+    session.tick(10.0)
+    assert rmf.replans == 1
 
 
 def test_stop_sends_cancel_order_and_drops_the_execution(wired):
@@ -189,3 +196,80 @@ def test_stop_and_navigate_cancel_a_running_action():
     assert started[1].cancelled and session.execution == 'exec-3'
     session.tick(4.0)
     assert rmf.finished_executions == []
+
+
+def fail_once(session, execution, order, now):
+    """navigate, then the rover refuses the order at once (as the real rover did 2026-10-01)."""
+    session.navigate(execution, Pose2D(3, 0), None, now)
+    refusal = VdaError('noRouteError', 'FATAL', 'Failed to reach current node.',
+                       references=(('orderId', order),))
+    session.on_state(at(0, 0, errors=(refusal,)), now + 0.5)
+
+
+def test_replan_backoff_doubles_and_resets_on_arrival(wired):
+    session, _, rmf = wired
+    session.on_state(at(0, 0), 0.0)
+    replan_times = []
+    t = 0.0
+    for i in range(1, 9):
+        fail_once(session, f'e{i}', f'o{i}', t)
+        while rmf.replans < i:
+            t += 0.5
+            session.tick(t)
+        replan_times.append(t)
+    gaps = [b - a for a, b in zip(replan_times, replan_times[1:])]
+    # Each gap is the next backoff plus the 0.5 s the refusal took: 2, 4, 8, ... capped at 60.
+    assert gaps == [2.5, 4.5, 8.5, 16.5, 32.5, 60.5, 60.5]
+
+    # An arrival resets the backoff.
+    session.navigate('ok', Pose2D(3, 0), None, t)
+    session.on_state(at(1, 0, order_id='o9', node_ids=('o9-goal',)), t + 1)
+    session.on_state(at(3, 0, order_id='o9', last_node_id='o9-goal'), t + 2)
+    assert rmf.finished_executions == ['ok']
+    fail_once(session, 'again', 'o10', t + 3)
+    session.tick(t + 4.5)
+    assert rmf.replans == 9
+
+
+def test_a_new_command_drops_the_pending_replan(wired):
+    session, _, rmf = wired
+    session.on_state(at(0, 0), 0.0)
+    fail_once(session, 'e1', 'o1', 0.0)
+    session.navigate('e2', Pose2D(3, 0), None, 0.7)
+    session.tick(5.0)
+    assert rmf.replans == 0
+
+
+def manual():
+    return {'operating_mode': 'MANUAL'}
+
+
+def locked():
+    return {'operating_mode': 'AUTOMATIC',
+            'errors': (VdaError('motionLocked', 'WARNING', 'Motion is locked'),)}
+
+
+@pytest.mark.parametrize('blocked', [manual(), locked()])
+def test_blocked_rover_gets_no_order_until_it_is_available(wired, blocked):
+    session, link, rmf = wired
+    log = session._log
+    session.on_state(at(0, 0, **blocked), 0.0)
+    session.navigate('e1', Pose2D(3, 0), None, 0.0)
+    for t in range(1, 600):  # ten minutes: no order, no failure, no replan, one warning
+        session.on_state(at(0, 0, **blocked), float(t))
+        session.tick(float(t))
+    assert link.sent == [] and rmf.replans == 0 and rmf.finished_executions == []
+    assert len(log.warnings) == 1 and 'no order sent' in log.warnings[0]
+    assert session.execution == 'e1'
+
+    session.on_state(at(0, 0, operating_mode='AUTOMATIC'), 600.0)
+    ((topic, body),) = link.sent
+    assert topic == 'order' and body['orderId'] == 'o1'
+
+
+def test_a_stale_mission_refusal_does_not_block(wired):
+    session, link, _ = wired
+    refused = (VdaError('missionRefused', 'WARNING', 'Drive mode is not AUTOMATIC'),)
+    session.on_state(at(0, 0, operating_mode='AUTOMATIC', errors=refused), 0.0)
+    session.navigate('e1', Pose2D(3, 0), None, 0.0)
+    assert [topic for topic, _ in link.sent] == ['order']

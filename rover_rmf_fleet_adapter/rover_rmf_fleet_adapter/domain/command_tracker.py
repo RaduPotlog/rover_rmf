@@ -13,6 +13,7 @@ ended, and never touches MQTT or RMF itself.
     IDLE --navigate--> SENT --state names our order--> ACTIVE --nodes done at goal--> ARRIVED
       \\--(order active)--> CANCELLING --rover idle--> SENT
       \\--(no state / not localized)--> WAITING --rover localized--> SENT (or CANCELLING)
+      \\--(rover blocked: manual mode, motion locked)--> HELD --rover available--> SENT
     WAITING --still not localized after accept_timeout--> FAILED
     SENT/ACTIVE/CANCELLING --error on our order | timeout | order ended elsewhere--> FAILED
     ACTIVE --no progress for stall_timeout--> FAILED
@@ -20,6 +21,10 @@ ended, and never touches MQTT or RMF itself.
 The stall watchdog exists because Nav 2 does not give up on its own: its behavior tree keeps
 replanning while the skid-steer rover sits near a goal it cannot turn onto slowly (seen in
 Gazebo 2026-09-29). A failed command makes RMF replan, and the replacing order restarts Nav 2.
+
+HELD has no timeout: an order sent to a rover in Manual or with motion locked is refused at once,
+RMF replans at once, and the two spin (about 1 Hz of orders and refusals, seen on the real rover
+2026-10-01). Held, the command just waits until an operator hands the rover back.
 """
 
 from dataclasses import dataclass, field
@@ -34,6 +39,7 @@ from .vda_messages import NavigationOrder
 class Phase(Enum):
     IDLE = 'idle'
     WAITING = 'waiting'
+    HELD = 'held'
     CANCELLING = 'cancelling'
     SENT = 'sent'
     ACTIVE = 'active'
@@ -97,6 +103,7 @@ class CommandTracker:
         self._goal: Optional[Goal] = None
         self._order: Optional[NavigationOrder] = None
         self._since = 0.0
+        self._held_reason: Optional[str] = None
 
     @property
     def phase(self) -> Phase:
@@ -107,8 +114,14 @@ class CommandTracker:
         return self._order
 
     @property
+    def held_reason(self) -> Optional[str]:
+        """Why the command is held back (HELD), else None."""
+        return self._held_reason if self._phase == Phase.HELD else None
+
+    @property
     def busy(self) -> bool:
-        return self._phase in (Phase.WAITING, Phase.CANCELLING, Phase.SENT, Phase.ACTIVE)
+        return self._phase in (
+            Phase.WAITING, Phase.HELD, Phase.CANCELLING, Phase.SENT, Phase.ACTIVE)
 
     def navigate(self, goal: Goal, status: Optional[RobotStatus], now: float) -> Step:
         """Start a new command, replacing (and cancelling) whatever runs."""
@@ -132,6 +145,9 @@ class CommandTracker:
         return Step([SendCancel()])
 
     def on_status(self, status: RobotStatus, now: float) -> Step:
+        if self._phase == Phase.HELD:
+            return self._start(status, now)
+
         if self._phase == Phase.WAITING:
             if now - self._since > self._accept_timeout:
                 return self._fail(
@@ -188,6 +204,12 @@ class CommandTracker:
         return self._send(status, now)
 
     def _send(self, status: RobotStatus, now: float) -> Step:
+        blocked = status.blocked_reason()
+        if blocked is not None:
+            self._held_reason = blocked
+            if self._phase != Phase.HELD:
+                self._enter(Phase.HELD, now)
+            return Step()
         if status.pose is None:
             if self._phase != Phase.WAITING:
                 self._enter(Phase.WAITING, now)

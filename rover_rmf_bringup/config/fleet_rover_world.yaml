@@ -49,7 +49,9 @@ rmf_fleet:
   # (rover_rmf_fleet_adapter/application/actions.py). wait: {"duration_sec": N} (the dashboard's
   # Patrol with pause).
   actions: ["wait"]
-  finishing_request: "park"
+  # What an idle rover does: "nothing" stays where the last task ended, and starting RMF never
+  # moves it. "park" would send it to its charger after every task and whenever RMF starts.
+  finishing_request: "nothing"
   responsive_wait: true
   reassign_task_interval: 120
   robots:

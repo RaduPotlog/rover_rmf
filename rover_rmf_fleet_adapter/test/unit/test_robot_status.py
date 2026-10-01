@@ -76,3 +76,18 @@ def test_errors_match_order_by_reference_whatever_the_key_spelling():
     assert [e.error_type for e in status.errors_for_order('o2')] == ['orderUpdateError']
     assert [e.error_type for e in status.errors_for_order('o1', ('o1-start', 'o1-goal'))] == \
         ['noRouteError']
+
+
+def test_blocked_reason_reads_the_current_mode_and_motion_lock():
+    def state(mode, *error_types):
+        return parse_state({'operatingMode': mode,
+                            'errors': [{'errorType': t, 'errorLevel': 'WARNING'}
+                                       for t in error_types]})
+
+    assert state('AUTOMATIC').blocked_reason() is None
+    assert state('').blocked_reason() is None  # unknown: don't hold
+    for mode in ('MANUAL', 'SERVICE', 'TEACHIN'):
+        assert mode in state(mode).blocked_reason()
+    assert 'motionLocked' in state('AUTOMATIC', 'motionLocked').blocked_reason()
+    # Why the last order was refused, not the rover's state now.
+    assert state('AUTOMATIC', 'missionRefused').blocked_reason() is None

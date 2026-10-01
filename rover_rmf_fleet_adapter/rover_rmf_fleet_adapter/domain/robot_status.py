@@ -16,6 +16,15 @@ from typing import Any, Mapping, Optional, Tuple
 from .model import DomainError, Pose2D
 
 
+# operatingMode values in which an operator drives, so the rover takes no orders
+# (rover_vda5050_adapter: drive modes ASSISTED and MANUAL -> MANUAL, no drive-mode manager ->
+# SERVICE).
+MANUAL_OPERATING_MODES = ('MANUAL', 'SERVICE', 'TEACHIN')
+# Errors that describe the rover now and stop it from driving. Not missionRefused: that is why the
+# LAST order was refused, and it stays until an order is accepted.
+BLOCKING_ERRORS = ('motionLocked',)
+
+
 def _reference_key(key: str) -> str:
     # The connector fills referenceKey values in snake_case (order_id, node_id) and only the
     # JSON keys get camelCased on the way out, so compare keys spelling-insensitively.
@@ -54,6 +63,15 @@ class RobotStatus:
     def has_active_order(self) -> bool:
         """Nodes or edges left to traverse: the connector will reject a new orderId."""
         return bool(self.node_ids) or bool(self.edge_ids)
+
+    def blocked_reason(self) -> Optional[str]:
+        """Why the rover cannot take an order right now, or None."""
+        if self.operating_mode in MANUAL_OPERATING_MODES:
+            return f'operatingMode {self.operating_mode}: the rover is not in Automatic'
+        for e in self.errors:
+            if e.error_type in BLOCKING_ERRORS:
+                return f'{e.error_type}: {e.description}' if e.description else e.error_type
+        return None
 
     def errors_for_order(self, order_id: str, node_ids: Tuple[str, ...] = ()):
         """Errors that name this order, directly (orderId) or through one of its nodes."""

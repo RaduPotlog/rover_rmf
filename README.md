@@ -61,7 +61,18 @@ two-node VDA order, from the rover's current pose to the destination, in the for
 - **Stall watchdog:** an active order that makes no progress (0.3 m or 0.5 rad) for 60 s
   (`vda5050.stall_timeout`) fails, and RMF replans. Nav 2 never gives up on its own when the
   skid steer stalls near a goal.
+- **Rover not available:** while the rover reports `operatingMode` `MANUAL`/`SERVICE` (drive mode
+  not Automatic) or a `motionLocked` error (e-stop, lock), the adapter sends no order. RMF's
+  command waits, with no timeout, and goes out once the rover is back in Automatic and unlocked.
+  The log says `holding the command` once. (`missionRefused` doesn't hold: it is why the *last*
+  order was refused and stays until the next one is accepted.)
+- **Replan backoff:** a failed command asks RMF to replan after 1 s, then 2, 4 … up to 60 s for
+  failures in a row; an arrival resets it. On 2026-10-01 the real rover refused every order at
+  once, and without the backoff RMF and the rover exchanged an order and a refusal every second
+  over 4G.
 - **`stop()`:** sends `cancelOrder`, and cancels a running perform-action.
+- **Idle rover:** `finishing_request: "nothing"`, so the rover stays where its last task ended. Starting
+  RMF never moves it by itself. ("park" would send it to its charger after every task and on startup.)
 - **Perform-actions:** a compose task's `perform_action` runs in the adapter
   (`application/actions.py`), by category. The only one so far is `wait`
   (`{"duration_sec": N}`, up to 3600 s): the rover stays where it is and the adapter finishes

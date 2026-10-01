@@ -11,6 +11,10 @@ released, because RMF may answer finished() with the next navigate() call.
 
 RMF's commands are a navigate or a perform-action (application/actions.py); at most one runs,
 and `execution` is its RMF handle. An action advances on tick(), from the update loop.
+
+A failed navigate asks RMF to replan after a backoff that doubles with each failure in a row
+(replan_backoff, up to replan_backoff_max) and resets on arrival: a goal the rover refuses at once
+must not become a 1 Hz loop of orders over the rover's 4G link.
 """
 
 from dataclasses import dataclass
@@ -42,7 +46,8 @@ class RobotSession:
 
     def __init__(self, name: str, link: FleetLink, rmf: RmfCommands, log: Log,
                  tracker: CommandTracker, default_map: str, unknown_battery_soc: float,
-                 actions: Mapping[str, ActionFactory] = ACTION_HANDLERS):
+                 actions: Mapping[str, ActionFactory] = ACTION_HANDLERS,
+                 replan_backoff: float = 1.0, replan_backoff_max: float = 60.0):
         """
         Wire one rover.
 
@@ -63,13 +68,18 @@ class RobotSession:
         self._execution: Optional[object] = None
         self._actions = actions
         self._action: Optional[ActionHandler] = None
+        self._replan_backoff = replan_backoff
+        self._replan_backoff_max = replan_backoff_max
+        self._failures = 0
+        self._replan_at: Optional[float] = None
+        self._logged_hold: Optional[str] = None
 
     # --- rover side -------------------------------------------------------------------------
 
     def on_state(self, status: RobotStatus, now: float) -> None:
         with self._lock:
             self._status = status
-            report = self._apply(self._tracker.on_status(status, now))
+            report = self._apply(self._tracker.on_status(status, now), now)
         report()
 
     def on_visualization(self, pose: Optional[Pose2D], map_id: str) -> None:
@@ -90,25 +100,28 @@ class RobotSession:
                  now: float) -> None:
         with self._lock:
             self._drop_action()
+            self._replan_at = None
             self._execution = execution
             self._log.info(
                 f'[{self._name}] navigate to ({goal.x:.2f}, {goal.y:.2f}, {goal.theta:.2f})')
             report = self._apply(
-                self._tracker.navigate(Goal(goal, speed_limit), self._status, now))
+                self._tracker.navigate(Goal(goal, speed_limit), self._status, now), now)
         report()
 
     def stop(self, now: float) -> None:
         with self._lock:
             self._drop_action()
+            self._replan_at = None
             self._execution = None
             self._log.info(f'[{self._name}] stop')
-            report = self._apply(self._tracker.stop(self._status, now))
+            report = self._apply(self._tracker.stop(self._status, now), now)
         report()
 
     def perform_action(self, category: str, description: object, execution: object,
                        now: float) -> None:
         with self._lock:
             self._drop_action()
+            self._replan_at = None
             self._execution = None
             factory = self._actions.get(category)
             try:
@@ -126,9 +139,12 @@ class RobotSession:
         report()
 
     def tick(self, now: float) -> None:
-        """Advance the running perform-action, if any (update loop)."""
+        """Advance the running perform-action; ask for a replan once its backoff is over."""
         with self._lock:
             report = self._advance_action(now)
+            if self._replan_at is not None and now >= self._replan_at:
+                self._replan_at = None
+                report = self._rmf.replan
         report()
 
     @property
@@ -150,7 +166,7 @@ class RobotSession:
 
     # --- internals (lock held) --------------------------------------------------------------
 
-    def _apply(self, step: Step) -> Callable[[], None]:
+    def _apply(self, step: Step, now: float) -> Callable[[], None]:
         """Send the step's messages; return what to tell RMF once the lock is released."""
         for effect in step.effects:
             if isinstance(effect, SendOrder):
@@ -164,14 +180,27 @@ class RobotSession:
                 self._link.send(INSTANT_ACTIONS_TOPIC,
                                 instant_actions_body([cancel_order_action()]))
 
+        held = self._tracker.held_reason
+        if held != self._logged_hold:
+            if held is not None:
+                self._log.warning(f'[{self._name}] holding the command, no order sent: {held}')
+            elif self._logged_hold is not None:
+                self._log.info(f'[{self._name}] rover available again')
+            self._logged_hold = held
+
         if step.result == Result.NONE or self._execution is None or self._action is not None:
             return _nothing
         execution, self._execution = self._execution, None
         if step.result == Result.ARRIVED:
             self._log.info(f'[{self._name}] arrived')
+            self._failures = 0
             return lambda: self._rmf.finished(execution)
-        self._log.error(f'[{self._name}] navigation failed: {step.reason}; replanning')
-        return self._rmf.replan
+        self._failures += 1
+        delay = min(self._replan_backoff * 2 ** (self._failures - 1), self._replan_backoff_max)
+        self._log.error(f'[{self._name}] navigation failed: {step.reason}; replanning in '
+                        f'{delay:.0f} s (failure {self._failures} in a row)')
+        self._replan_at = now + delay
+        return _nothing
 
     def _advance_action(self, now: float) -> Callable[[], None]:
         if self._action is None or not self._action.tick(now):
