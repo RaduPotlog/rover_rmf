@@ -11,3 +11,6 @@ rover_rmf_maps/maps/*
 !rover_rmf_maps/maps/rover_world/
 rover_rmf_bringup/config/fleet_*.yaml
 !rover_rmf_bringup/config/fleet_rover_world.yaml
+
+# Server deployment secrets (docker/rmf-server.sh init): broker passwords, mosquitto logins.
+docker/server/

@@ -9,9 +9,11 @@ Entry point: an Open-RMF EasyFullControl fleet adapter that drives rovers over V
 
 Same arguments as rmf_demos_fleet_adapter, plus the broker. The fleet config holds RMF's
 `rmf_fleet` section and this adapter's `vda5050` section (identity per robot, timeouts).
+RMF_BROKER_USERNAME / RMF_BROKER_PASSWORD in the environment override the broker login.
 """
 
 import argparse
+import os
 import sys
 import threading
 import time
@@ -25,6 +27,7 @@ from rmf_adapter import Adapter
 import rmf_adapter.easy_full_control as rmf_easy
 import yaml
 
+from ..application.broker_settings import resolve_broker
 from ..application.ports import Log
 from ..application.robot_session import RobotSession
 from ..domain.command_tracker import CommandTracker
@@ -79,7 +82,8 @@ def main(argv=None):
     with open(args.config_file) as f:
         config = yaml.safe_load(f)
     vda = config.get('vda5050') or {}
-    broker = vda.get('broker') or {}
+    broker = resolve_broker(vda.get('broker') or {}, args.broker_host, args.broker_port,
+                            os.environ)
 
     fleet_name = fleet_config.fleet_name
     node = rclpy.node.Node(f'{fleet_name}_command_handle')
@@ -109,11 +113,11 @@ def main(argv=None):
             version=vda.get('version', '2.0.0'))
         link = MqttVdaLink(
             identity,
-            host=args.broker_host or broker.get('host', 'localhost'),
-            port=args.broker_port or int(broker.get('port', 1883)),
+            host=broker.host,
+            port=broker.port,
             log=log,
-            username=broker.get('username', ''),
-            password=broker.get('password', ''),
+            username=broker.username,
+            password=broker.password,
             client_id=f'rmf-{fleet_name}-{name}')
         rmf_robot = RmfRobot(name, fleet_handle,
                              fleet_config.get_known_robot_configuration(name), log)

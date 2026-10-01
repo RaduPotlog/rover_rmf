@@ -1,0 +1,9 @@
+# Topic ACL for mosquitto.server.conf. VDA 5050 topics: uagv/v2/<manufacturer>/<serial>/<topic>.
+
+# The RMF fleet adapter (master control) talks to every rover.
+user rmf
+topic readwrite uagv/#
+
+# Rover A1's connector only reaches its own topics.
+user rover_a1
+topic readwrite uagv/v2/MechatronicsAcademy/rover_a1/#

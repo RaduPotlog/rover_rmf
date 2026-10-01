@@ -189,6 +189,55 @@ import with the same name overrides a built-in site.
     localized (`positionInitialized` true) before dispatching.
 - `rover_fleet` limits (0.5 m/s) only shape RMF's schedule. Nav 2's own limits drive the rover.
 
+## Server deployment (WireGuard)
+
+For permanent use, RMF and the fleet's MQTT broker run on a server: `rover-a1-server`, reached at
+`10.8.0.1` over WireGuard. The rover's connector dials out to that broker, so RMF keeps working
+while the laptop is off. Every port is published on the WireGuard address only.
+
+| Port on 10.8.0.1 | Service |
+|---|---|
+| 1883 | Mosquitto, with logins: `rmf` (this stack) and `rover_a1` (only its own `uagv/v2/MechatronicsAcademy/rover_a1/#`) |
+| 3000 | Dashboard |
+| 8010 | api-server |
+| 8006 | Trajectory websocket (dashboard map) |
+| 8020 | Sites page |
+
+**On the server**, once:
+
+1. Install Docker Engine with the compose plugin, and start it after `wg-quick@wg0`. Ports bound
+   to 10.8.0.1 fail if `wg0` isn't up yet.
+2. Check out this repo and run:
+   ```bash
+   docker/rmf-server.sh init            # docker/server/.env + broker logins (git-ignored)
+   docker/rmf-server.sh up -d --build
+   docker/rmf-server.sh exec site-manager rover-authorize   # once per rover release
+   ```
+
+`docker/rmf-server.sh` wraps `docker compose` with `docker-compose.server.yml` and
+`server/.env`. That overlay does three things:
+- moves every port to `RMF_BIND_IP`;
+- switches Mosquitto to `mosquitto.server.conf` + `mosquitto.acl`;
+- points RMF at that broker for every site, logging in with `RMF_BROKER_USERNAME` /
+  `RMF_BROKER_PASSWORD`.
+
+**On the rover**, set these balenaCloud variables on `rover-a1-vda5050`. The password comes from
+`docker/rmf-server.sh rover-password`.
+
+| Variable | Value |
+|---|---|
+| `ROVER_START_VDA5050` | `true` |
+| `ROVER_VDA5050_LOCAL_BROKER` | `false` |
+| `ROVER_VDA5050_BROKER_HOST` | `10.8.0.1` |
+| `ROVER_VDA5050_BROKER_PORT` | `1883` |
+| `ROVER_VDA5050_BROKER_USER` | `rover_a1` |
+| `ROVER_VDA5050_BROKER_PASSWORD` | the password from `rover-password` |
+| `ROVER_VDA5050_BROKER_TLS` | `false`; WireGuard already encrypts the link |
+
+The rover reaches 10.8.0.1 through the RUTX11's tunnel. The sites page reaches the rover's ssh
+(`192.168.1.201:24`) the other way, which needs a RUTX11 firewall rule for `10.8.0.1`.
+Over 4G, VDA `state` (1 Hz) and `visualization` (2 Hz) are the steady load.
+
 ## Tests
 
 ```bash

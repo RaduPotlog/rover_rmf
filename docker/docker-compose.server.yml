@@ -1,0 +1,57 @@
+# Server deployment: RMF + the fleet's MQTT broker on a host reached over WireGuard.
+# Use it through docker/rmf-server.sh, which adds this file and server/.env:
+#
+#   docker/rmf-server.sh init            # once: generates server/.env + the broker logins
+#   docker/rmf-server.sh up -d --build
+#
+# Everything is published on RMF_BIND_IP only (default 10.8.0.1, the server's WireGuard
+# address), never on the server's LAN. `!override` replaces the base file's ports instead of
+# adding to them.
+#
+# The broker requires a login (mosquitto.server.conf + mosquitto.acl):
+#   rmf       this stack's fleet adapter, all of uagv/#
+#   rover_a1  the rover's VDA 5050 connector, only its own topics; on the rover set
+#             ROVER_VDA5050_LOCAL_BROKER=false, ROVER_VDA5050_BROKER_HOST=<RMF_BIND_IP>,
+#             ROVER_VDA5050_BROKER_USER=rover_a1, ROVER_VDA5050_BROKER_PASSWORD=<server/.env>,
+#             ROVER_VDA5050_BROKER_TLS=false (WireGuard already encrypts the link)
+# RMF uses this broker for every site, whatever the site's fleet config names.
+services:
+  mosquitto:
+    volumes: !override
+      - ./mosquitto.server.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto.acl:/mosquitto/config/acl:ro
+      - ./server/mosquitto.passwd:/mosquitto/config/passwd:ro
+      - mosquitto-data:/mosquitto/data
+    ports: !override
+      - "${RMF_BIND_IP:-10.8.0.1}:1883:1883"
+
+  api-server:
+    environment:
+      RMF_API_PUBLIC_URL: http://${RMF_BIND_IP:-10.8.0.1}:${RMF_API_PORT:-8010}
+    ports: !override
+      - "${RMF_BIND_IP:-10.8.0.1}:${RMF_API_PORT:-8010}:8000"
+
+  dashboard:
+    build:
+      args:
+        API_URL: http://${RMF_BIND_IP:-10.8.0.1}:${RMF_API_PORT:-8010}
+    ports: !override
+      - "${RMF_BIND_IP:-10.8.0.1}:3000:3000"
+
+  rmf:
+    environment:
+      RMF_BROKER_HOST: mosquitto
+      RMF_BROKER_PORT: "1883"
+      RMF_BROKER_USERNAME: rmf
+      RMF_BROKER_PASSWORD: ${RMF_MQTT_PASSWORD:?run docker/rmf-server.sh init}
+    ports: !override
+      - "${RMF_BIND_IP:-10.8.0.1}:8006:8006"
+
+  site-manager:
+    environment:
+      ROVER_BROKER: mosquitto:1883
+    ports: !override
+      - "${RMF_BIND_IP:-10.8.0.1}:8020:8020"
+
+volumes:
+  mosquitto-data:
