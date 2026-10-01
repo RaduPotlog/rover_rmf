@@ -16,6 +16,7 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_command_tracker test/unit/test_command_tracker.py)
   ament_add_pytest_test(test_robot_session test/unit/test_robot_session.py)
   ament_add_pytest_test(test_broker_settings test/unit/test_broker_settings.py)
+  ament_add_pytest_test(test_actions test/unit/test_actions.py)
   add_test(
     NAME check_domain_purity
     COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_domain_purity.sh ${CMAKE_CURRENT_SOURCE_DIR})

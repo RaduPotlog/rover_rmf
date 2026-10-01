@@ -45,6 +45,7 @@ class RmfRobot(RmfCommands):
 
     def update(self) -> None:
         """Push the rover's state to RMF; the first valid state registers the robot."""
+        self._session.tick(time.monotonic())
         state = self._session.rmf_state()
         if state is None:
             return
@@ -100,6 +101,4 @@ class RmfRobot(RmfCommands):
             self._session.stop(time.monotonic())
 
     def _execute_action(self, category: str, description: dict, execution) -> None:
-        # The fleet config declares no perform-actions; finish rather than hang the task.
-        self._log.error(f'[{self._name}] perform-action {category!r} is not supported; skipping')
-        execution.finished()
+        self._session.perform_action(category, description, execution, time.monotonic())

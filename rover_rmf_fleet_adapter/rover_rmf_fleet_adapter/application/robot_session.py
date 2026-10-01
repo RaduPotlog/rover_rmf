@@ -8,15 +8,20 @@ Called from three threads (MQTT callbacks, RMF's command callbacks, the update l
 entry point takes the session lock. Effects are published while holding it (FleetLink.send only
 queues the message in paho); RMF is told about a finished or failed command after the lock is
 released, because RMF may answer finished() with the next navigate() call.
+
+RMF's commands are a navigate or a perform-action (application/actions.py); at most one runs,
+and `execution` is its RMF handle. An action advances on tick(), from the update loop.
 """
 
 from dataclasses import dataclass
+import functools
 import threading
-from typing import Callable, Optional, Tuple
+from typing import Callable, Mapping, Optional, Tuple
 
+from .actions import ACTION_HANDLERS, ActionFactory, ActionHandler
 from .ports import FleetLink, Log, RmfCommands
 from ..domain.command_tracker import CommandTracker, Goal, Result, SendCancel, SendOrder, Step
-from ..domain.model import Pose2D
+from ..domain.model import DomainError, Pose2D
 from ..domain.robot_status import RobotStatus
 from ..domain.vda_messages import (
     cancel_order_action, instant_actions_body, INSTANT_ACTIONS_TOPIC, ORDER_TOPIC)
@@ -36,7 +41,8 @@ class RmfRobotState:
 class RobotSession:
 
     def __init__(self, name: str, link: FleetLink, rmf: RmfCommands, log: Log,
-                 tracker: CommandTracker, default_map: str, unknown_battery_soc: float):
+                 tracker: CommandTracker, default_map: str, unknown_battery_soc: float,
+                 actions: Mapping[str, ActionFactory] = ACTION_HANDLERS):
         """
         Wire one rover.
 
@@ -55,6 +61,8 @@ class RobotSession:
         self._status: Optional[RobotStatus] = None
         self._connection = ''
         self._execution: Optional[object] = None
+        self._actions = actions
+        self._action: Optional[ActionHandler] = None
 
     # --- rover side -------------------------------------------------------------------------
 
@@ -81,6 +89,7 @@ class RobotSession:
     def navigate(self, execution: object, goal: Pose2D, speed_limit: Optional[float],
                  now: float) -> None:
         with self._lock:
+            self._drop_action()
             self._execution = execution
             self._log.info(
                 f'[{self._name}] navigate to ({goal.x:.2f}, {goal.y:.2f}, {goal.theta:.2f})')
@@ -90,9 +99,36 @@ class RobotSession:
 
     def stop(self, now: float) -> None:
         with self._lock:
+            self._drop_action()
             self._execution = None
             self._log.info(f'[{self._name}] stop')
             report = self._apply(self._tracker.stop(self._status, now))
+        report()
+
+    def perform_action(self, category: str, description: object, execution: object,
+                       now: float) -> None:
+        with self._lock:
+            self._drop_action()
+            self._execution = None
+            factory = self._actions.get(category)
+            try:
+                if factory is None:
+                    raise DomainError('this adapter has no handler for it')
+                action = factory(description, now, self._link)
+            except DomainError as e:
+                # Finish rather than hang the task; RMF goes on with the next step.
+                self._log.error(f'[{self._name}] perform-action {category!r} skipped: {e}')
+                report = functools.partial(self._rmf.finished, execution)
+            else:
+                self._log.info(f'[{self._name}] perform-action {category!r}: {description}')
+                self._execution, self._action = execution, action
+                report = self._advance_action(now)
+        report()
+
+    def tick(self, now: float) -> None:
+        """Advance the running perform-action, if any (update loop)."""
+        with self._lock:
+            report = self._advance_action(now)
         report()
 
     @property
@@ -128,7 +164,7 @@ class RobotSession:
                 self._link.send(INSTANT_ACTIONS_TOPIC,
                                 instant_actions_body([cancel_order_action()]))
 
-        if step.result == Result.NONE or self._execution is None:
+        if step.result == Result.NONE or self._execution is None or self._action is not None:
             return _nothing
         execution, self._execution = self._execution, None
         if step.result == Result.ARRIVED:
@@ -136,6 +172,19 @@ class RobotSession:
             return lambda: self._rmf.finished(execution)
         self._log.error(f'[{self._name}] navigation failed: {step.reason}; replanning')
         return self._rmf.replan
+
+    def _advance_action(self, now: float) -> Callable[[], None]:
+        if self._action is None or not self._action.tick(now):
+            return _nothing
+        execution, self._execution, self._action = self._execution, None, None
+        self._log.info(f'[{self._name}] perform-action done')
+        return lambda: self._rmf.finished(execution)
+
+    def _drop_action(self) -> None:
+        if self._action is not None:
+            self._log.info(f'[{self._name}] perform-action cancelled')
+            self._action.cancel()
+            self._action = None
 
 
 def _nothing() -> None:

@@ -45,7 +45,10 @@ rmf_fleet:
   task_capabilities:
     loop: true             # patrol / go-to-place
     delivery: false
-  actions: []
+  # perform-actions a compose task may use; each needs a handler in the fleet adapter
+  # (rover_rmf_fleet_adapter/application/actions.py). wait: {"duration_sec": N} (the dashboard's
+  # Patrol with pause).
+  actions: ["wait"]
   finishing_request: "park"
   responsive_wait: true
   reassign_task_interval: 120

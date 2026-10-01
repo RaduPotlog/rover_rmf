@@ -27,6 +27,7 @@ from rmf_adapter import Adapter
 import rmf_adapter.easy_full_control as rmf_easy
 import yaml
 
+from ..application.actions import ACTION_HANDLERS
 from ..application.broker_settings import resolve_broker
 from ..application.ports import Log
 from ..application.robot_session import RobotSession
@@ -101,6 +102,11 @@ def main(argv=None):
     server_uri = node.get_parameter('server_uri').get_parameter_value().string_value
     fleet_config.server_uri = server_uri or None
     fleet_handle = adapter.add_easy_fleet(fleet_config)
+    for action in config['rmf_fleet'].get('actions') or []:
+        if action not in ACTION_HANDLERS:
+            # RMF would dispatch it and the session would skip it: say so up front.
+            log.error(f'fleet config lists action {action!r}, which this adapter cannot run '
+                      f'(it runs {sorted(ACTION_HANDLERS)})')
 
     robots, links = {}, []
     robot_vda = vda.get('robots') or {}

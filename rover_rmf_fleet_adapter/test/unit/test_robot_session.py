@@ -5,6 +5,7 @@ import itertools
 
 import pytest
 
+from rover_rmf_fleet_adapter.application.actions import ActionHandler
 from rover_rmf_fleet_adapter.application.ports import FleetLink, Log, RmfCommands
 from rover_rmf_fleet_adapter.application.robot_session import RobotSession
 from rover_rmf_fleet_adapter.domain.command_tracker import CommandTracker
@@ -38,6 +39,9 @@ class FakeRmf(RmfCommands):
 
 
 class QuietLog(Log):
+    def __init__(self):
+        self.errors = []
+
     def info(self, message):
         pass
 
@@ -45,7 +49,7 @@ class QuietLog(Log):
         pass
 
     def error(self, message):
-        pass
+        self.errors.append(message)
 
 
 @pytest.fixture
@@ -124,3 +128,64 @@ def test_stop_sends_cancel_order_and_drops_the_execution(wired):
     assert session.execution is None
     session.on_state(at(1, 0, order_id='o1'), 3.0)
     assert rmf.finished_executions == [] and rmf.replans == 0
+
+
+def test_wait_action_holds_the_execution_until_its_time_is_up(wired):
+    session, link, rmf = wired
+    session.on_state(at(0, 0), 0.0)
+    session.perform_action('wait', {'duration_sec': 5}, 'exec-w', 10.0)
+    assert session.execution == 'exec-w'
+    session.tick(14.9)
+    assert rmf.finished_executions == []
+    session.tick(15.0)
+    assert rmf.finished_executions == ['exec-w']
+    assert rmf.lock_free == [True]
+    assert session.execution is None
+    assert link.sent == []  # the rover is not told anything: it just stays put
+
+
+def test_unknown_or_bad_action_is_skipped_with_an_error(wired):
+    session, _, rmf = wired
+    session.perform_action('dance', {}, 'exec-1', 0.0)
+    session.perform_action('wait', {'duration_sec': -3}, 'exec-2', 0.0)
+    assert rmf.finished_executions == ['exec-1', 'exec-2']
+    assert rmf.lock_free == [True, True]
+    assert len(session._log.errors) == 2
+    assert session.execution is None
+
+
+class RecordingAction(ActionHandler):
+    def __init__(self):
+        self.cancelled = False
+
+    def tick(self, now):
+        return False
+
+    def cancel(self):
+        self.cancelled = True
+
+
+def test_stop_and_navigate_cancel_a_running_action():
+    started = []
+
+    def start(description, now, link):
+        started.append(RecordingAction())
+        return started[-1]
+
+    rmf = FakeRmf()
+    session = RobotSession('rover_a1', FakeLink(), rmf, QuietLog(),
+                           CommandTracker(lambda: 'o1'), default_map='L1',
+                           unknown_battery_soc=1.0, actions={'hold': start})
+    rmf.session = session
+    session.on_connection('ONLINE')
+    session.on_state(at(0, 0), 0.0)
+
+    session.perform_action('hold', {}, 'exec-1', 0.0)
+    session.stop(1.0)
+    assert started[0].cancelled and session.execution is None
+
+    session.perform_action('hold', {}, 'exec-2', 2.0)
+    session.navigate('exec-3', Pose2D(3, 0), None, 3.0)
+    assert started[1].cancelled and session.execution == 'exec-3'
+    session.tick(4.0)
+    assert rmf.finished_executions == []
