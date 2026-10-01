@@ -312,8 +312,13 @@ class RobotSession:
             return
         state = status.action_state(request.action_id)
         if state is not None and state.finished:
-            request.result = (state.status == 'FINISHED',
-                              state.result_description or state.status)
+            ok = state.status == 'FINISHED'
+            message = state.result_description
+            if not message:
+                # A connector without the setDriveMode handler fails it with no description.
+                message = 'done' if ok else ('the rover failed setDriveMode without a reason; '
+                                             'its VDA 5050 connector may predate setDriveMode')
+            request.result = (ok, message)
             self._log.info(f'[{self._name}] setDriveMode {request.mode}: {state.status} '
                            f'{state.result_description}')
 

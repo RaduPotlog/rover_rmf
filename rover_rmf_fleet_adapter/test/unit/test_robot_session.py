@@ -363,3 +363,11 @@ def test_drive_mode_needs_a_known_mode_and_a_connected_rover(wired):
     with pytest.raises(DomainError):
         session.request_drive_mode('MANUAL', 0.0)
     assert link.sent == []
+
+
+def test_a_connector_without_set_drive_mode_gets_an_explanation(wired):
+    session, _, _ = wired
+    action_id = session.request_drive_mode('MANUAL', 0.0)
+    session.on_state(at(0, 0, action_states=action_states(action_id, 'FAILED')), 1.0)
+    ok, message = session.drive_mode_result(action_id, 1.0)
+    assert not ok and 'predate setDriveMode' in message
