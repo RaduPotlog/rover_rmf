@@ -1,6 +1,7 @@
 /*
  * Rover A1's Open-RMF dashboard: rmf-web's demo dashboard with our branding, only the task
- * types our fleet accepts, and the ROVER TASK dialog (tasks/). Built by docker/Dockerfile.dashboard.
+ * types our fleet accepts, the ROVER TASK dialog (tasks/) and the Rover window (rover/: drive
+ * mode, in/out of the fleet). Built by docker/Dockerfile.dashboard.
  */
 import '@fontsource/roboto/300.css';
 import '@fontsource/roboto/400.css';
@@ -26,6 +27,7 @@ import {
 } from 'rmf-dashboard-framework/micro-apps';
 import { StubAuthenticator } from 'rmf-dashboard-framework/services';
 
+import { roverControlApp } from './rover/rover-control-app';
 import { RoverTaskAppbarItem } from './tasks/rover-task-dialog';
 import { roverTheme } from './theme';
 
@@ -41,6 +43,7 @@ const mapApp = createMapApp({
 });
 
 const appRegistry: MicroAppManifest[] = [
+  roverControlApp,
   mapApp,
   doorsApp,
   liftsApp,
@@ -50,21 +53,15 @@ const appRegistry: MicroAppManifest[] = [
 ];
 
 const homeWorkspace: InitialWindow[] = [
-  {
-    layout: { x: 0, y: 0, w: 12, h: 6 },
-    microApp: mapApp,
-  },
+  { layout: { x: 0, y: 0, w: 9, h: 6 }, microApp: mapApp },
+  { layout: { x: 9, y: 0, w: 3, h: 6 }, microApp: roverControlApp },
 ];
 
+// The site has no doors, lifts or mutex groups: the Rover window takes their place.
 const robotsWorkspace: InitialWindow[] = [
-  {
-    layout: { x: 0, y: 0, w: 7, h: 4 },
-    microApp: robotsApp,
-  },
-  { layout: { x: 8, y: 0, w: 5, h: 8 }, microApp: mapApp },
-  { layout: { x: 0, y: 0, w: 7, h: 4 }, microApp: doorsApp },
-  { layout: { x: 0, y: 0, w: 7, h: 4 }, microApp: liftsApp },
-  { layout: { x: 8, y: 0, w: 5, h: 4 }, microApp: robotMutexGroupsApp },
+  { layout: { x: 0, y: 0, w: 7, h: 4 }, microApp: roverControlApp },
+  { layout: { x: 0, y: 4, w: 7, h: 4 }, microApp: robotsApp },
+  { layout: { x: 7, y: 0, w: 5, h: 8 }, microApp: mapApp },
 ];
 
 const tasksWorkspace: InitialWindow[] = [

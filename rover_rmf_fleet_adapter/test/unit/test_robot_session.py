@@ -9,8 +9,8 @@ from rover_rmf_fleet_adapter.application.actions import ActionHandler
 from rover_rmf_fleet_adapter.application.ports import FleetLink, Log, RmfCommands
 from rover_rmf_fleet_adapter.application.robot_session import RobotSession
 from rover_rmf_fleet_adapter.domain.command_tracker import CommandTracker
-from rover_rmf_fleet_adapter.domain.model import Pose2D
-from rover_rmf_fleet_adapter.domain.robot_status import RobotStatus, VdaError
+from rover_rmf_fleet_adapter.domain.model import DomainError, Pose2D
+from rover_rmf_fleet_adapter.domain.robot_status import ActionState, RobotStatus, VdaError
 
 
 class FakeLink(FleetLink):
@@ -27,6 +27,8 @@ class FakeRmf(RmfCommands):
         self.replans = 0
         self.session = None
         self.lock_free = []
+        self.fleet = []
+        self.offline = []
 
     def finished(self, execution):
         # RMF may call navigate() from inside finished(): the session lock must be free.
@@ -36,6 +38,12 @@ class FakeRmf(RmfCommands):
 
     def replan(self):
         self.replans += 1
+
+    def set_in_fleet(self, in_fleet):
+        self.fleet.append(in_fleet)
+
+    def set_offline(self, offline):
+        self.offline.append(offline)
 
 
 class QuietLog(Log):
@@ -273,3 +281,85 @@ def test_a_stale_mission_refusal_does_not_block(wired):
     session.on_state(at(0, 0, operating_mode='AUTOMATIC', errors=refused), 0.0)
     session.navigate('e1', Pose2D(3, 0), None, 0.0)
     assert [topic for topic, _ in link.sent] == ['order']
+
+
+def test_drive_mode_decides_fleet_membership(wired):
+    session, _, rmf = wired
+    session.on_state(at(0, 0), 0.0)  # mode unknown: no change
+    assert rmf.fleet == []
+    session.on_state(at(0, 0, operating_mode='AUTOMATIC'), 1.0)
+    session.on_state(at(0, 0, operating_mode='AUTOMATIC'), 2.0)  # edges only
+    session.on_state(at(0, 0, operating_mode='MANUAL'), 3.0)
+    session.on_state(at(0, 0, operating_mode='SERVICE'), 4.0)
+    session.on_state(at(0, 0, operating_mode='AUTOMATIC'), 5.0)
+    assert rmf.fleet == [True, False, True]
+    assert session.snapshot()['in_fleet'] is True
+
+
+def test_connection_marks_the_robot_offline(wired):
+    session, _, rmf = wired  # the fixture connected it: ONLINE
+    session.on_connection('ONLINE')
+    session.on_connection('CONNECTIONBROKEN')
+    session.on_connection('CONNECTIONBROKEN')
+    session.on_connection('ONLINE')
+    assert rmf.offline == [False, True, False]
+
+
+def test_an_offline_rover_leaves_the_fleet_until_it_reports_automatic(wired):
+    session, _, rmf = wired
+    session.on_state(at(0, 0, operating_mode='AUTOMATIC'), 0.0)
+    session.on_connection('CONNECTIONBROKEN')
+    session.on_connection('ONLINE')  # back, but no state yet: stays out
+    assert rmf.fleet == [True, False]
+    session.on_state(at(0, 0, operating_mode='AUTOMATIC'), 1.0)
+    assert rmf.fleet == [True, False, True]
+
+
+def action_states(action_id, status, description=''):
+    return (ActionState(action_id, 'setDriveMode', status, description),)
+
+
+def test_drive_mode_request_reports_the_rovers_answer(wired):
+    session, link, _ = wired
+    action_id = session.request_drive_mode('MANUAL', 0.0)
+    ((topic, body),) = link.sent
+    (action,) = body['actions']
+    assert topic == 'instantActions' and action['actionType'] == 'setDriveMode'
+    assert action['actionParameters'] == [{'key': 'mode', 'value': 'MANUAL'}]
+    assert action['actionId'] == action_id
+
+    assert session.drive_mode_result(action_id, 0.5) is None
+    session.on_state(at(0, 0, action_states=action_states(action_id, 'RUNNING')), 0.6)
+    assert session.drive_mode_result(action_id, 0.7) is None
+    session.on_state(at(0, 0, operating_mode='MANUAL', action_states=action_states(
+        action_id, 'FINISHED', 'Drive mode Manual.')), 1.0)
+    assert session.drive_mode_result(action_id, 1.1) == (True, 'Drive mode Manual.')
+    snapshot = session.snapshot()
+    assert snapshot['drive_mode_request'] == {
+        'mode': 'MANUAL', 'done': True, 'ok': True, 'message': 'Drive mode Manual.'}
+    assert snapshot['operating_mode'] == 'MANUAL' and snapshot['in_fleet'] is False
+
+
+def test_drive_mode_refusal_and_timeout(wired):
+    session, _, _ = wired
+    refused = session.request_drive_mode('AUTOMATIC', 0.0)
+    session.on_state(at(0, 0, action_states=action_states(
+        refused, 'FAILED', 'Automatic refused: no mission manager')), 1.0)
+    assert session.drive_mode_result(refused, 1.0) == (
+        False, 'Automatic refused: no mission manager')
+
+    unanswered = session.request_drive_mode('MANUAL', 2.0)
+    assert session.drive_mode_result(refused, 2.0)[0] is False  # superseded
+    assert session.drive_mode_result(unanswered, 11.0) is None
+    ok, message = session.drive_mode_result(unanswered, 12.5)
+    assert not ok and 'did not answer' in message
+
+
+def test_drive_mode_needs_a_known_mode_and_a_connected_rover(wired):
+    session, link, _ = wired
+    with pytest.raises(DomainError):
+        session.request_drive_mode('ASSISTED', 0.0)
+    session.on_connection('CONNECTIONBROKEN')
+    with pytest.raises(DomainError):
+        session.request_drive_mode('MANUAL', 0.0)
+    assert link.sent == []

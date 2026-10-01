@@ -3,8 +3,9 @@
 #
 #   docker compose -f docker/docker-compose.yml build dashboard
 #
-# The browser calls the api-server and the trajectory server directly, so their published URLs
-# are compiled in (API_URL / TRAJECTORY_URL; docker-compose*.yml set them). rmf-web is pinned:
+# The browser calls the api-server, the trajectory server and the fleet adapter's rover control
+# API directly, so their published URLs are compiled in (API_URL / TRAJECTORY_URL /
+# ROVER_API_URL; docker-compose*.yml set them). rmf-web is pinned:
 # RMF_WEB_REF is the jazzy branch commit the jazzy-nightly images were built from; bump it on
 # purpose and re-check the ROVER TASK dialog (it uses the framework's hooks).
 #
@@ -37,7 +38,9 @@ RUN pnpm exec vitest run --root examples/rover \
 
 ARG API_URL=http://localhost:8010
 ARG TRAJECTORY_URL=http://localhost:8006
+ARG ROVER_API_URL=http://localhost:8030
 RUN VITE_RMF_API_URL=${API_URL} VITE_RMF_TRAJECTORY_URL=${TRAJECTORY_URL} \
+    VITE_ROVER_API_URL=${ROVER_API_URL} \
     pnpm exec vite -c examples/rover/vite.config.ts build examples/rover
 
 FROM docker.io/library/node:22-bookworm-slim

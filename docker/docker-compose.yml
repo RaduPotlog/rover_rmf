@@ -16,8 +16,8 @@
 # Simulated rover in indoor mode: add -f docker/docker-compose.sim-maps.yml, so the page reads
 # the maps start_sim_rover.sh saves in ~/rover_maps instead of the rover's.
 #
-# Dashboard http://localhost:3000, sites page :8020, api-server :8010, MQTT broker for the
-# simulated rover on host :1884
+# Dashboard http://localhost:3000, sites page :8020, api-server :8010, rover control API :8030
+# (the fleet adapter; the dashboard's Rover card), MQTT broker for the simulated rover on host :1884
 # (:1884 because the host may run its own mosquitto on 1883). All ROS traffic stays on this
 # compose network (rmw_cyclonedds_cpp), apart from the rover's ROS 2 Lyrical graph.
 #
@@ -54,6 +54,7 @@ services:
       dockerfile: docker/Dockerfile.dashboard
       args:
         API_URL: http://localhost:${RMF_API_PORT:-8010}
+        ROVER_API_URL: http://localhost:8030
     image: rover-rmf-dashboard:jazzy
     ports:
       - "3000:3000"
@@ -80,6 +81,7 @@ services:
       - rmf-sites:/sites
     ports:
       - "8006:8006"   # schedule/trajectory websocket used by the dashboard's map
+      - "8030:8030"   # rover control API (fleet adapter), the dashboard's Rover card
     restart: unless-stopped
 
   # The RMF sites page: lists the maps saved on the rover, imports them as sites, activates one.

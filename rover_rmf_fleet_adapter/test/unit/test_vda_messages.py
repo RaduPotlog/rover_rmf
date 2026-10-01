@@ -9,8 +9,8 @@ import pytest
 
 from rover_rmf_fleet_adapter.domain.model import DomainError, Pose2D, VdaIdentity
 from rover_rmf_fleet_adapter.domain.vda_messages import (
-    cancel_order_action, HeaderCounter, instant_actions_body, NavigationOrder, timestamp,
-    with_header)
+    cancel_order_action, HeaderCounter, instant_actions_body, NavigationOrder,
+    set_drive_mode_action, timestamp, with_header)
 
 IDENTITY = VdaIdentity('uagv', 'MechatronicsAcademy', 'rover_a1')
 
@@ -80,3 +80,12 @@ def test_cancel_order_instant_action():
     assert action['actionType'] == 'cancelOrder'
     assert action['blockingType'] == 'HARD'
     assert action['actionId']
+
+
+def test_set_drive_mode_action():
+    action = set_drive_mode_action('AUTOMATIC', 'a1')
+    assert action == {'actionType': 'setDriveMode', 'actionId': 'a1', 'blockingType': 'HARD',
+                      'actionParameters': [{'key': 'mode', 'value': 'AUTOMATIC'}]}
+    assert set_drive_mode_action('MANUAL')['actionId']  # a fresh uuid
+    with pytest.raises(DomainError):
+        set_drive_mode_action('ASSISTED')

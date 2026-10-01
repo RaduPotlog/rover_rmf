@@ -30,7 +30,7 @@ ROS distros never share a graph.
 | `rover_rmf_fleet_adapter` | EasyFullControl fleet adapter. `domain/` holds the VDA 5050 messages, the state parsing and the command tracker. `application/` holds `RobotSession`. `infrastructure/` holds the paho link and the RMF binding. `presentation/` is the entry point. Only `infrastructure/` and `presentation/` import RMF, ROS or paho, and `scripts/check_domain_purity.sh` enforces it. |
 | `rover_rmf_maps` | One RMF site per directory in `maps/<site>/`: a floor plan and a building whose level is named `<site>`. `rover_world` is the Gazebo world (9 waypoints such as `rover_a1_charger` and `north`, 11 two-way lanes, generated from `rover_world.sdf`). Real sites are imported from the rover's saved maps. Nav graphs are generated at build time. `scripts/building_writer.py` and `scripts/rover_map_import.py` hold the shared code. |
 | `rover_rmf_bringup` | `rover_rmf.launch.xml` (RMF core and the adapter; `site:=<site>`) and `config/fleet_<site>.yaml` (RMF fleet config plus the adapter's `vda5050` section). |
-| `dashboard/` | Our rmf-web dashboard app: Mechatronics Academy branding and the **ROVER TASK** dialog (`tasks/`). See [Dashboard](#dashboard). |
+| `dashboard/` | Our rmf-web dashboard app: Mechatronics Academy branding, the **ROVER TASK** dialog (`tasks/`) and the **Rover** window (`rover/`: drive mode, in or out of the fleet). See [Dashboard](#dashboard). |
 | `docker/` | `Dockerfile.rmf` (Jazzy, RMF debs, builds and tests the packages), `docker-compose.yml` (mosquitto, rmf, rmf-web api-server and dashboard), broker and api-server configs. `Dockerfile.dashboard` builds `dashboard/` inside a pinned rmf-web checkout. |
 | `scripts/start_sim_rover.sh` | Starts the simulated rover's side in one terminal: Nav 2, drive mode, mission manager and the VDA 5050 connector on `:1884`. It then sets the drive mode to AUTOMATIC. `--localization indoor` behaves like the real rover. |
 | `site_manager/` | The RMF sites page (<http://localhost:8020>, compose service `site-manager`): lists the maps saved on the rover, imports them as sites into the `rmf-sites` volume, and activates one. `docker/run_rmf.sh` runs RMF for the active site and restarts it on a switch. |
@@ -71,6 +71,20 @@ two-node VDA order, from the rover's current pose to the destination, in the for
   once, and without the backoff RMF and the rover exchanged an order and a refusal every second
   over 4G.
 - **`stop()`:** sends `cancelOrder`, and cancels a running perform-action.
+- **In or out of the fleet:** the adapter decommissions the rover in RMF while it is offline or
+  an operator has it (`operatingMode` `MANUAL`/`SERVICE`: drive mode Manual or Assisted). It
+  recommissions it on its next `AUTOMATIC` state. Decommissioned, RMF gives it no new tasks and a
+  task sent anyway fails at dispatch ("No fleet adapters offered a bid"). Queued tasks are kept.
+  Because this is derived from the rover's state, it holds whoever switched the mode and survives
+  RMF restarts. A decommission from rmf-web's robot dialog lasts until the next mode change. While
+  the connection is down, RMF also shows the robot `offline`. RMF never removes a robot
+  otherwise; it stays registered for the adapter's lifetime.
+- **Drive mode from RMF:** the adapter's **rover control API**
+  (`presentation/control_api.py`, port `vda5050.control_api_port`, 8030) serves the dashboard's
+  Rover window. `POST /api/robots/<name>/drive_mode {"mode": "MANUAL"|"AUTOMATIC"}` sends the
+  rover's custom VDA 5050 instant action `setDriveMode` (rover_vda5050). The request answers once
+  the rover reports the action `FINISHED` or `FAILED` in `actionStates`, or after 10 s.
+  `GET /api/robots` returns each rover's connection, mode, fleet membership and last request.
 - **Idle rover:** `finishing_request: "nothing"` and `responsive_wait: false`, so the rover stays
   where its last task ended and starting RMF never moves it by itself. "park" would send it to its
   charger after every task and on startup. A responsive wait would drive it to the nearest
@@ -225,6 +239,13 @@ What it changes from the stock dashboard:
   (`theme.ts`).
 - **Task list:** NEW TASK keeps only Patrol and Custom Compose. The fleet refuses Delivery
   and Clean.
+- **Rover window** (Map and Robots tabs, also addable on Custom): connection, drive mode, in or out
+  of the fleet, RMF status and battery, with **Manual** and **Automatic** buttons. Manual takes the
+  rover out of the fleet. Automatic asks first whether the area is clear, because the rover
+  rejoins the fleet and resumes its queued tasks. It polls the fleet adapter's rover control API
+  every 2 s; the URL is compiled in from the `ROVER_API_URL` build arg. The buttons need the rover's
+  connector with `setDriveMode` (rover_vda5050 `feature/remote-drive-mode` or later). An older
+  connector fails the action, and the window shows that.
 - **ROVER TASK:** a button in the app bar opens our own dialog with the rover's task types. It
   dispatches to "any robot" or to a chosen one.
   - *Patrol with pause* visits stops in order and waits at each (0 = drive through), for a
@@ -257,6 +278,7 @@ while the laptop is off. Every port is published on the WireGuard address only.
 | 3000 | Dashboard |
 | 8010 | api-server |
 | 8006 | Trajectory websocket (dashboard map) |
+| 8030 | Rover control API (fleet adapter): the dashboard's Rover window |
 | 8020 | Sites page |
 
 **On the server**, once:

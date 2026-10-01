@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 import uuid
 
-from .model import Pose2D, VdaIdentity
+from .model import DomainError, Pose2D, VdaIdentity
 
 ORDER_TOPIC = 'order'
 INSTANT_ACTIONS_TOPIC = 'instantActions'
@@ -121,3 +121,15 @@ def instant_actions_body(actions: List[dict]) -> dict:
 
 def cancel_order_action() -> dict:
     return action('cancelOrder', 'HARD')
+
+
+# The rover connector's custom instant action (rover_vda5050: setDriveMode).
+SET_DRIVE_MODE = 'setDriveMode'
+DRIVE_MODES = ('MANUAL', 'AUTOMATIC')
+
+
+def set_drive_mode_action(mode: str, action_id: Optional[str] = None) -> dict:
+    """setDriveMode {mode: MANUAL | AUTOMATIC}; the rover reports the result in actionStates."""
+    if mode not in DRIVE_MODES:
+        raise DomainError(f'drive mode must be one of {DRIVE_MODES}, got {mode!r}')
+    return action(SET_DRIVE_MODE, 'HARD', [{'key': 'mode', 'value': mode}], action_id)

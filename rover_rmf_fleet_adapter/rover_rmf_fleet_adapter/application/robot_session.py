@@ -12,12 +12,17 @@ released, because RMF may answer finished() with the next navigate() call.
 RMF's commands are a navigate or a perform-action (application/actions.py); at most one runs,
 and `execution` is its RMF handle. An action advances on tick(), from the update loop.
 
+The rover's drive mode decides whether it is in the fleet: out (decommissioned) while an operator
+has it (operatingMode MANUAL, SERVICE) or while it is offline, back in on its next AUTOMATIC
+state. Fleet control can switch the mode with the rover's setDriveMode action
+(request_drive_mode), and the result comes back in the state's actionStates.
+
 A failed navigate asks RMF to replan after a backoff that doubles with each failure in a row
 (replan_backoff, up to replan_backoff_max) and resets on arrival: a goal the rover refuses at once
 must not become a 1 Hz loop of orders over the rover's 4G link.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import functools
 import threading
 from typing import Callable, Mapping, Optional, Tuple
@@ -26,9 +31,10 @@ from .actions import ACTION_HANDLERS, ActionFactory, ActionHandler
 from .ports import FleetLink, Log, RmfCommands
 from ..domain.command_tracker import CommandTracker, Goal, Result, SendCancel, SendOrder, Step
 from ..domain.model import DomainError, Pose2D
-from ..domain.robot_status import RobotStatus
+from ..domain.robot_status import in_fleet, RobotStatus
 from ..domain.vda_messages import (
-    cancel_order_action, instant_actions_body, INSTANT_ACTIONS_TOPIC, ORDER_TOPIC)
+    cancel_order_action, instant_actions_body, INSTANT_ACTIONS_TOPIC, ORDER_TOPIC,
+    set_drive_mode_action)
 
 ONLINE = 'ONLINE'
 
@@ -42,12 +48,23 @@ class RmfRobotState:
     battery_soc: float
 
 
+@dataclass
+class DriveModeRequest:
+    """A setDriveMode sent to the rover; result is (ok, message) once it ended or timed out."""
+
+    action_id: str
+    mode: str
+    sent_at: float
+    result: Optional[Tuple[bool, str]] = field(default=None)
+
+
 class RobotSession:
 
     def __init__(self, name: str, link: FleetLink, rmf: RmfCommands, log: Log,
                  tracker: CommandTracker, default_map: str, unknown_battery_soc: float,
                  actions: Mapping[str, ActionFactory] = ACTION_HANDLERS,
-                 replan_backoff: float = 1.0, replan_backoff_max: float = 60.0):
+                 replan_backoff: float = 1.0, replan_backoff_max: float = 60.0,
+                 drive_mode_timeout: float = 10.0):
         """
         Wire one rover.
 
@@ -73,6 +90,10 @@ class RobotSession:
         self._failures = 0
         self._replan_at: Optional[float] = None
         self._logged_hold: Optional[str] = None
+        self._in_fleet: Optional[bool] = None
+        self._offline: Optional[bool] = None
+        self._drive_mode_timeout = drive_mode_timeout
+        self._drive_request: Optional[DriveModeRequest] = None
 
     # --- rover side -------------------------------------------------------------------------
 
@@ -80,7 +101,10 @@ class RobotSession:
         with self._lock:
             self._status = status
             report = self._apply(self._tracker.on_status(status, now), now)
+            fleet = self._sync_fleet(status)
+            self._settle_drive_request(status)
         report()
+        fleet()
 
     def on_visualization(self, pose: Optional[Pose2D], map_id: str) -> None:
         """Position-only updates at 2 Hz, between the 1 Hz states."""
@@ -93,6 +117,15 @@ class RobotSession:
             if connection_state != self._connection:
                 self._log.info(f'[{self._name}] connection: {connection_state}')
             self._connection = connection_state
+            offline = connection_state != ONLINE
+            changed = offline != self._offline
+            self._offline = offline
+            # Leaving the fleet now; rejoining waits for a fresh state (the mode may have changed
+            # while the rover was away).
+            fleet = self._sync_fleet(self._status) if offline else _nothing
+        if changed:
+            self._rmf.set_offline(offline)
+        fleet()
 
     # --- RMF side ---------------------------------------------------------------------------
 
@@ -146,6 +179,56 @@ class RobotSession:
                 self._replan_at = None
                 report = self._rmf.replan
         report()
+
+    # --- fleet control (the control API) ---------------------------------------------------
+
+    def request_drive_mode(self, mode: str, now: float) -> str:
+        """
+        Send setDriveMode (MANUAL or AUTOMATIC); returns its actionId for drive_mode_result().
+
+        Raises DomainError for another mode or while the rover is offline.
+        """
+        with self._lock:
+            if self._connection != ONLINE:
+                raise DomainError(f'the rover is not connected ({self._connection or "no news"})')
+            action = set_drive_mode_action(mode)
+            self._log.info(f'[{self._name}] setDriveMode {mode} ({action["actionId"]})')
+            self._link.send(INSTANT_ACTIONS_TOPIC, instant_actions_body([action]))
+            self._drive_request = DriveModeRequest(action['actionId'], mode, now)
+            return action['actionId']
+
+    def drive_mode_result(self, action_id: str, now: float) -> Optional[Tuple[bool, str]]:
+        """(ok, message) once the rover finished or failed the request; None while it runs."""
+        with self._lock:
+            request = self._drive_request
+            if request is None or request.action_id != action_id:
+                return (False, 'superseded by a newer drive mode request')
+            if request.result is None and now - request.sent_at > self._drive_mode_timeout:
+                request.result = (False, 'the rover did not answer within '
+                                  f'{self._drive_mode_timeout:.0f} s (is its connector new '
+                                  'enough for setDriveMode?)')
+            return request.result
+
+    def snapshot(self) -> dict:
+        """What the control API shows about this rover (JSON-ready)."""
+        with self._lock:
+            status = self._status
+            request = self._drive_request
+            return {
+                'name': self._name,
+                'connection': self._connection or 'UNKNOWN',
+                'operating_mode': status.operating_mode if status else '',
+                'in_fleet': self._in_fleet,
+                'blocked_reason': status.blocked_reason() if status else None,
+                'localized': status is not None and status.pose is not None,
+                'battery_soc': status.battery_soc if status else None,
+                'drive_mode_request': None if request is None else {
+                    'mode': request.mode,
+                    'done': request.result is not None,
+                    'ok': request.result[0] if request.result else None,
+                    'message': request.result[1] if request.result else '',
+                },
+            }
 
     @property
     def execution(self) -> Optional[object]:
@@ -208,6 +291,31 @@ class RobotSession:
         execution, self._execution, self._action = self._execution, None, None
         self._log.info(f'[{self._name}] perform-action done')
         return lambda: self._rmf.finished(execution)
+
+    def _sync_fleet(self, status: Optional[RobotStatus]) -> Callable[[], None]:
+        """Out of the fleet while offline or an operator has the rover, back in on Automatic."""
+        if self._connection != ONLINE:
+            wanted, why = False, f'connection {self._connection or "unknown"}'
+        elif status is None:
+            return _nothing
+        else:
+            wanted, why = in_fleet(status.operating_mode), f'operatingMode {status.operating_mode}'
+        if wanted is None or wanted == self._in_fleet:
+            return _nothing
+        self._in_fleet = wanted
+        self._log.info(f'[{self._name}] {"in" if wanted else "out of"} the fleet ({why})')
+        return functools.partial(self._rmf.set_in_fleet, wanted)
+
+    def _settle_drive_request(self, status: RobotStatus) -> None:
+        request = self._drive_request
+        if request is None or request.result is not None:
+            return
+        state = status.action_state(request.action_id)
+        if state is not None and state.finished:
+            request.result = (state.status == 'FINISHED',
+                              state.result_description or state.status)
+            self._log.info(f'[{self._name}] setDriveMode {request.mode}: {state.status} '
+                           f'{state.result_description}')
 
     def _drop_action(self) -> None:
         if self._action is not None:

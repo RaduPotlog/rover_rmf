@@ -3,7 +3,8 @@
 
 import pytest
 
-from rover_rmf_fleet_adapter.domain.robot_status import parse_battery, parse_position, parse_state
+from rover_rmf_fleet_adapter.domain.robot_status import (
+    in_fleet, parse_battery, parse_position, parse_state)
 
 
 def rover_state(**overrides):
@@ -91,3 +92,25 @@ def test_blocked_reason_reads_the_current_mode_and_motion_lock():
     assert 'motionLocked' in state('AUTOMATIC', 'motionLocked').blocked_reason()
     # Why the last order was refused, not the rover's state now.
     assert state('AUTOMATIC', 'missionRefused').blocked_reason() is None
+
+
+def test_action_states_are_parsed():
+    status = parse_state({'actionStates': [
+        {'actionId': 'a1', 'actionType': 'setDriveMode', 'actionStatus': 'FINISHED',
+         'resultDescription': 'Drive mode Manual.'},
+        {'actionId': 'a2', 'actionType': 'startPause', 'actionStatus': 'RUNNING'},
+        'junk']})
+    assert [a.action_id for a in status.action_states] == ['a1', 'a2']
+    assert status.action_state('a1').finished
+    assert status.action_state('a1').result_description == 'Drive mode Manual.'
+    assert not status.action_state('a2').finished
+    assert status.action_state('nope') is None
+    assert parse_state({}).action_states == ()
+
+
+def test_in_fleet_follows_the_operating_mode():
+    assert in_fleet('AUTOMATIC') is True
+    assert in_fleet('SEMIAUTOMATIC') is True
+    for mode in ('MANUAL', 'SERVICE', 'TEACHIN'):
+        assert in_fleet(mode) is False
+    assert in_fleet('') is None

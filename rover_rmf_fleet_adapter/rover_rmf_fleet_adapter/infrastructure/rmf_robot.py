@@ -28,6 +28,9 @@ class RmfRobot(RmfCommands):
         self._session: Optional[RobotSession] = None
         self._update_handle = None
         self._refused_map: Optional[str] = None
+        # Wanted before the robot registered: applied once it has.
+        self._in_fleet: Optional[bool] = None
+        self._offline = False
 
     def attach(self, session: RobotSession) -> None:
         self._session = session
@@ -40,6 +43,30 @@ class RmfRobot(RmfCommands):
     def replan(self) -> None:
         if self._update_handle is not None:
             self._update_handle.more().replan()
+
+    def set_in_fleet(self, in_fleet: bool) -> None:
+        self._in_fleet = in_fleet
+        self._apply_commission()
+
+    def set_offline(self, offline: bool) -> None:
+        self._offline = offline
+        self._apply_status()
+
+    def _apply_commission(self) -> None:
+        if self._update_handle is None or self._in_fleet is None:
+            return
+        more = self._update_handle.more()
+        # The binding has no Commission constructor: change the robot's current one.
+        commission = more.commission()
+        commission.accept_dispatched_tasks = self._in_fleet
+        commission.accept_direct_tasks = self._in_fleet
+        commission.perform_idle_behavior = self._in_fleet
+        more.set_commission(commission)
+
+    def _apply_status(self) -> None:
+        if self._update_handle is not None:
+            # None hands the status back to RMF (idle, working, ...).
+            self._update_handle.more().override_status('offline' if self._offline else None)
 
     # --- update loop --------------------------------------------------------------------------
 
@@ -67,6 +94,8 @@ class RmfRobot(RmfCommands):
                 return
             self._update_handle = handle
             self._refused_map = None
+            self._apply_commission()
+            self._apply_status()
             self._log.info(f'[{self._name}] registered with RMF on {state.map_name} at '
                            f'({state.position[0]:.2f}, {state.position[1]:.2f})')
             return

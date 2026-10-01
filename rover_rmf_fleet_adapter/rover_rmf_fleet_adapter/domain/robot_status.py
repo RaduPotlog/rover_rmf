@@ -20,6 +20,8 @@ from .model import DomainError, Pose2D
 # (rover_vda5050_adapter: drive modes ASSISTED and MANUAL -> MANUAL, no drive-mode manager ->
 # SERVICE).
 MANUAL_OPERATING_MODES = ('MANUAL', 'SERVICE', 'TEACHIN')
+# operatingMode values in which fleet control drives (VDA 5050: orders are accepted).
+FLEET_OPERATING_MODES = ('AUTOMATIC', 'SEMIAUTOMATIC')
 # Errors that describe the rover now and stop it from driving. Not missionRefused: that is why the
 # LAST order was refused, and it stays until an order is accepted.
 BLOCKING_ERRORS = ('motionLocked',)
@@ -44,6 +46,32 @@ class VdaError:
 
 
 @dataclass(frozen=True)
+class ActionState:
+    """One entry of the state's actionStates: an action the rover runs or has run."""
+
+    action_id: str
+    action_type: str = ''
+    status: str = ''
+    result_description: str = ''
+
+    @property
+    def finished(self) -> bool:
+        return self.status in ('FINISHED', 'FAILED')
+
+
+def in_fleet(operating_mode: str) -> Optional[bool]:
+    """
+    Whether RMF may give the rover tasks in this operatingMode; None when it is unknown ('').
+
+    Automatic: yes. Manual, Assisted (reported as MANUAL), Service, Teach-in: an operator has the
+    rover, so it is out of the fleet until it is back in Automatic.
+    """
+    if not operating_mode:
+        return None
+    return operating_mode in FLEET_OPERATING_MODES
+
+
+@dataclass(frozen=True)
 class RobotStatus:
     pose: Optional[Pose2D] = None
     map_id: str = ''
@@ -58,6 +86,10 @@ class RobotStatus:
     edge_ids: Tuple[str, ...] = ()
     operating_mode: str = ''
     errors: Tuple[VdaError, ...] = field(default_factory=tuple)
+    action_states: Tuple[ActionState, ...] = field(default_factory=tuple)
+
+    def action_state(self, action_id: str) -> Optional[ActionState]:
+        return next((a for a in self.action_states if a.action_id == action_id), None)
 
     @property
     def has_active_order(self) -> bool:
@@ -146,6 +178,18 @@ def parse_errors(errors: Any) -> Tuple[VdaError, ...]:
     return tuple(parsed)
 
 
+def parse_action_states(action_states: Any) -> Tuple[ActionState, ...]:
+    if not isinstance(action_states, list):
+        return ()
+    return tuple(
+        ActionState(
+            action_id=str(a.get('actionId', '')),
+            action_type=str(a.get('actionType', '')),
+            status=str(a.get('actionStatus', '')),
+            result_description=str(a.get('resultDescription') or ''))
+        for a in action_states if isinstance(a, Mapping))
+
+
 def parse_state(state: Mapping) -> RobotStatus:
     pose, map_id = parse_position(state.get('agvPosition'))
     battery_soc, charging = parse_battery(state.get('batteryState'))
@@ -162,4 +206,5 @@ def parse_state(state: Mapping) -> RobotStatus:
         edge_ids=_ids(state.get('edgeStates'), 'edgeId'),
         operating_mode=str(state.get('operatingMode') or ''),
         errors=parse_errors(state.get('errors')),
+        action_states=parse_action_states(state.get('actionStates')),
     )

@@ -39,6 +39,7 @@ services:
       args:
         API_URL: http://${RMF_BIND_IP:-10.8.0.1}:${RMF_API_PORT:-8010}
         TRAJECTORY_URL: http://${RMF_BIND_IP:-10.8.0.1}:8006
+        ROVER_API_URL: http://${RMF_BIND_IP:-10.8.0.1}:8030
     ports: !override
       - "${RMF_BIND_IP:-10.8.0.1}:3000:3000"
 
@@ -50,6 +51,7 @@ services:
       RMF_BROKER_PASSWORD: ${RMF_MQTT_PASSWORD:?run docker/rmf-server.sh init}
     ports: !override
       - "${RMF_BIND_IP:-10.8.0.1}:8006:8006"
+      - "${RMF_BIND_IP:-10.8.0.1}:8030:8030"
 
   site-manager:
     environment:

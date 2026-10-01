@@ -25,6 +25,14 @@ class RmfCommands(ABC):
     def replan(self) -> None:
         """The command failed; ask RMF to plan again from where the rover is."""
 
+    @abstractmethod
+    def set_in_fleet(self, in_fleet: bool) -> None:
+        """Commission the robot (RMF gives it tasks) or decommission it (RMF gives it none)."""
+
+    @abstractmethod
+    def set_offline(self, offline: bool) -> None:
+        """Show the robot as offline in RMF's robot state, or let RMF report it again."""
+
 
 class Log(ABC):
 

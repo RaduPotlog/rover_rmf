@@ -92,6 +92,8 @@ vda5050:
   # replans (Nav 2 keeps replanning forever when the skid steer stalls near a goal). 0 = off.
   stall_timeout: 60.0
   update_frequency: 10.0   # Hz, RobotState updates to RMF
+  # The rover control API for the dashboard's Rover card (drive mode); 0 turns it off.
+  control_api_port: 8030
   robots:
     rover_a1:
       serial_number: "rover_a1"

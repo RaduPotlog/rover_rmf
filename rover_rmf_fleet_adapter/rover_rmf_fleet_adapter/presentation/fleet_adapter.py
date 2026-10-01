@@ -10,6 +10,7 @@ Entry point: an Open-RMF EasyFullControl fleet adapter that drives rovers over V
 Same arguments as rmf_demos_fleet_adapter, plus the broker. The fleet config holds RMF's
 `rmf_fleet` section and this adapter's `vda5050` section (identity per robot, timeouts).
 RMF_BROKER_USERNAME / RMF_BROKER_PASSWORD in the environment override the broker login.
+vda5050.control_api_port (8030) serves the rover control API (presentation/control_api.py).
 """
 
 import argparse
@@ -35,6 +36,7 @@ from ..domain.command_tracker import CommandTracker
 from ..domain.model import VdaIdentity
 from ..infrastructure.mqtt_vda_link import MqttVdaLink
 from ..infrastructure.rmf_robot import RmfRobot
+from . import control_api
 
 
 class RclpyLog(Log):
@@ -108,7 +110,7 @@ def main(argv=None):
             log.error(f'fleet config lists action {action!r}, which this adapter cannot run '
                       f'(it runs {sorted(ACTION_HANDLERS)})')
 
-    robots, links = {}, []
+    robots, links, sessions = {}, [], {}
     robot_vda = vda.get('robots') or {}
     for name in fleet_config.known_robots:
         robot_cfg = robot_vda.get(name) or {}
@@ -138,7 +140,13 @@ def main(argv=None):
         rmf_robot.attach(session)
         link.start()
         robots[name] = rmf_robot
+        sessions[name] = session
         links.append(link)
+
+    # The dashboard's Rover card: drive mode and fleet membership. 0 turns it off.
+    control_port = int(vda.get('control_api_port', 8030))
+    if control_port:
+        control_api.start(sessions, '0.0.0.0', control_port, log)
 
     period = 1.0 / float(vda.get('update_frequency', 10.0))
     reassign_interval = float(config['rmf_fleet'].get('reassign_task_interval', 60.0))
