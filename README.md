@@ -30,7 +30,8 @@ ROS distros never share a graph.
 | `rover_rmf_fleet_adapter` | EasyFullControl fleet adapter. `domain/` holds the VDA 5050 messages, the state parsing and the command tracker. `application/` holds `RobotSession`. `infrastructure/` holds the paho link and the RMF binding. `presentation/` is the entry point. Only `infrastructure/` and `presentation/` import RMF, ROS or paho, and `scripts/check_domain_purity.sh` enforces it. |
 | `rover_rmf_maps` | One RMF site per directory in `maps/<site>/`: a floor plan and a building whose level is named `<site>`. `rover_world` is the Gazebo world (9 waypoints such as `rover_a1_charger` and `north`, 11 two-way lanes, generated from `rover_world.sdf`). Real sites are imported from the rover's saved maps. Nav graphs are generated at build time. `scripts/building_writer.py` and `scripts/rover_map_import.py` hold the shared code. |
 | `rover_rmf_bringup` | `rover_rmf.launch.xml` (RMF core and the adapter; `site:=<site>`) and `config/fleet_<site>.yaml` (RMF fleet config plus the adapter's `vda5050` section). |
-| `docker/` | `Dockerfile.rmf` (Jazzy, RMF debs, builds and tests the packages), `docker-compose.yml` (mosquitto, rmf, rmf-web api-server and dashboard), broker and api-server configs. `Dockerfile.dashboard` points the prebuilt dashboard at the api-server's published port. |
+| `dashboard/` | Our rmf-web dashboard app: Mechatronics Academy branding and the **ROVER TASK** dialog (`tasks/`). See [Dashboard](#dashboard). |
+| `docker/` | `Dockerfile.rmf` (Jazzy, RMF debs, builds and tests the packages), `docker-compose.yml` (mosquitto, rmf, rmf-web api-server and dashboard), broker and api-server configs. `Dockerfile.dashboard` builds `dashboard/` inside a pinned rmf-web checkout. |
 | `scripts/start_sim_rover.sh` | Starts the simulated rover's side in one terminal: Nav 2, drive mode, mission manager and the VDA 5050 connector on `:1884`. It then sets the drive mode to AUTOMATIC. `--localization indoor` behaves like the real rover. |
 | `site_manager/` | The RMF sites page (<http://localhost:8020>, compose service `site-manager`): lists the maps saved on the rover, imports them as sites into the `rmf-sites` volume, and activates one. `docker/run_rmf.sh` runs RMF for the active site and restarts it on a switch. |
 | `scripts/import_rover_map.py` | The same import from the command line, into `rover_rmf_maps/maps/` (git-ignored, built into the local image). |
@@ -60,7 +61,13 @@ two-node VDA order, from the rover's current pose to the destination, in the for
 - **Stall watchdog:** an active order that makes no progress (0.3 m or 0.5 rad) for 60 s
   (`vda5050.stall_timeout`) fails, and RMF replans. Nav 2 never gives up on its own when the
   skid steer stalls near a goal.
-- **`stop()`:** sends `cancelOrder`.
+- **`stop()`:** sends `cancelOrder`, and cancels a running perform-action.
+- **Perform-actions:** a compose task's `perform_action` runs in the adapter
+  (`application/actions.py`), by category. The only one so far is `wait`
+  (`{"duration_sec": N}`, up to 3600 s): the rover stays where it is and the adapter finishes
+  the action when the time is up. A category the fleet config lists under `actions` but the
+  adapter has no handler for is logged at startup. If such an action is dispatched anyway, the
+  adapter skips it with an error.
 - **Reported state:** position comes from `state` (1 Hz) and `visualization` (2 Hz). The map is
   `mapId` (the rover's indoor map name), or `vda5050.map_name` while that is empty. The battery comes from `batteryState`; when the rover
   reports 0 % and 0 V (no reading, as in Gazebo), the adapter reports `unknown_battery_soc`
@@ -98,6 +105,8 @@ Terminal 3, the rover stack:
 Then:
 
 - **Dashboard:** open <http://localhost:3000>. `rover_a1` appears at `rover_a1_charger` on the `rover_world` map.
+  **ROVER TASK** → *Patrol with pause* → stops `north` and `east`, pause 10 s, 2 rounds. The `rmf`
+  log then shows `perform-action 'wait'` after each arrival.
 - **Patrol task from the CLI:**
 
   ```bash
@@ -123,8 +132,8 @@ on `127.0.0.1:1884`.
 
 The api-server is published on **8010** (`RMF_API_PORT`), not upstream's 8000. A Windows service
 (`Manager.exe`) holds `0.0.0.0:8000` on this box. Docker Desktop then silently publishes nothing,
-and the dashboard's LOGIN goes to that service and hangs. The dashboard image is rebuilt with the
-same port. To pick another port, run
+and the dashboard's LOGIN goes to that service and hangs. The dashboard is built with the same
+port. To pick another port, run
 `RMF_API_PORT=<port> docker compose -f docker/docker-compose.yml up -d --build`.
 
 ## Real rover
@@ -189,6 +198,40 @@ import with the same name overrides a built-in site.
     localized (`positionInitialized` true) before dispatching.
 - `rover_fleet` limits (0.5 m/s) only shape RMF's schedule. Nav 2's own limits drive the rover.
 
+## Dashboard
+
+`dashboard/` is our app on rmf-web's dashboard framework (`rmf-dashboard-framework`), the same
+way rmf-web's own demo dashboard is built. `docker/Dockerfile.dashboard` downloads rmf-web at a
+pinned commit (`RMF_WEB_REF`, the `jazzy` branch the jazzy-nightly images come from) and copies
+`dashboard/` in as `examples/rover`. It runs the task model tests and a type check, then builds.
+The API and trajectory URLs are compiled in from the `API_URL` / `TRAJECTORY_URL` build args.
+
+What it changes from the stock dashboard:
+- **Branding:** the logo (`public/resources/logo.png`, the round crop of
+  `icons/Logo-Arm-WhiteOrange-372x372-1.png`), the tab title, the favicon and the orange theme
+  (`theme.ts`).
+- **Task list:** NEW TASK keeps only Patrol and Custom Compose. The fleet refuses Delivery
+  and Clean.
+- **ROVER TASK:** a button in the app bar opens our own dialog with the rover's task types. It
+  dispatches to "any robot" or to a chosen one.
+  - *Patrol with pause* visits stops in order and waits at each (0 = drive through), for a
+    number of rounds.
+  - It is sent as a `compose` task with one phase per stop: `go_to_place`, then a
+    `perform_action` `wait`. Jazzy compose tasks have no wait event of their own.
+
+**Adding a rover task:**
+1. Add `dashboard/tasks/<name>/` with a `RoverTaskType`: a pure model (`model.ts` with
+   `makeDefault`, `validate`, `toRequest`, plus a `model.test.ts`) and a form (`form.tsx`).
+2. Add one line to `tasks/registry.ts`.
+3. If the robot has to *do* something other than drive (switch an aux output, dock …):
+   - add a handler to `rover_rmf_fleet_adapter/application/actions.py`, with its description
+     in `domain/actions.py`;
+   - add its category to `actions` in `rover_rmf_bringup/config/fleet_rover_world.yaml`.
+
+**Sites imported before an `actions` change** keep their old fleet config, which
+`site_io.fleet_config` copied from that template. Re-import them on the sites page, or RMF
+refuses tasks that use the new action ("Fleet not configured to perform this action").
+
 ## Server deployment (WireGuard)
 
 For permanent use, RMF and the fleet's MQTT broker run on a server: `rover-a1-server`, reached at
@@ -248,7 +291,9 @@ colcon test --packages-select rover_rmf_fleet_adapter && colcon test-result --ve
 python3 -m pytest site_manager/test            # the sites page's server and API
 ```
 
-These unit tests run on the host without RMF. The image build runs them again under Jazzy.
+These unit tests run on the host without RMF. The image build runs them again under Jazzy. The
+dashboard's task model tests (`dashboard/tasks/**/*.test.ts`, vitest) and its type check run in
+`docker compose -f docker/docker-compose.yml build dashboard`.
 
 ## Regenerating the Gazebo map
 
@@ -262,8 +307,8 @@ reads `rover_world.sdf` and rewrites the PNG and the building file.
   `orderUpdateId + 1`).
 - **Final heading.** The rover arrives facing along the path (the connector's
   `orientation_mode: path`), not at the yaw RMF asked for.
-- **Missing features:** no docking, doors, lifts or perform-actions, and no battery model in
-  simulation.
+- **Missing features:** no docking, doors or lifts, and no battery model in simulation. The
+  only perform-action is `wait`.
 - **Battery and mechanics are estimates.** They are ASSUMPTION values in the fleet configs.
   They only shape RMF's planning; the real rover reports its own battery.
 - **Straight lanes between places.** Imported sites get only these, so a place hidden behind a

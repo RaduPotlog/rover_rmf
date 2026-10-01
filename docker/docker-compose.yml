@@ -23,8 +23,8 @@
 #
 # The api-server is published on RMF_API_PORT (default 8010), not upstream's 8000: a Windows
 # service (Manager.exe) holds 0.0.0.0:8000 on this box, Docker Desktop then silently publishes
-# nothing and the dashboard's login goes to that service. The dashboard image is rebuilt with
-# the same port (Dockerfile.dashboard). Inside this network RMF still uses api-server:8000.
+# nothing and the dashboard's login goes to that service. The dashboard is built with the same
+# port (Dockerfile.dashboard). Inside this network RMF still uses api-server:8000.
 name: rover-rmf
 
 services:
@@ -50,8 +50,8 @@ services:
 
   dashboard:
     build:
-      context: .
-      dockerfile: Dockerfile.dashboard
+      context: ..
+      dockerfile: docker/Dockerfile.dashboard
       args:
         API_URL: http://localhost:${RMF_API_PORT:-8010}
     image: rover-rmf-dashboard:jazzy

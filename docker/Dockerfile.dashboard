@@ -1,18 +1,47 @@
-# rmf-web demo dashboard pointed at the api-server's and the trajectory server's published ports.
+# Rover A1's dashboard: rmf-web's dashboard framework + our app in ../dashboard (branding, the
+# ROVER TASK dialog). Context: the rover_rmf repo.
 #
-# The upstream image compiles apiServerUrl="http://localhost:8000" and
-# trajectoryServerUrl="http://localhost:8006" into its bundle. On the laptop a Windows service
-# holds port 8000 (see docker-compose.yml); on the server both live on its WireGuard address
-# (docker-compose.server.yml). Rewrite both; the checks fail the build if a new upstream bundle
-# no longer contains the strings.
-FROM ghcr.io/open-rmf/rmf-web/demo-dashboard:jazzy-nightly
+#   docker compose -f docker/docker-compose.yml build dashboard
+#
+# The browser calls the api-server and the trajectory server directly, so their published URLs
+# are compiled in (API_URL / TRAJECTORY_URL; docker-compose*.yml set them). rmf-web is pinned:
+# RMF_WEB_REF is the jazzy branch commit the jazzy-nightly images were built from; bump it on
+# purpose and re-check the ROVER TASK dialog (it uses the framework's hooks).
+#
+# Follows rmf-web's .github/demo-dashboard/Dockerfile.
+
+FROM docker.io/library/node:22-bookworm AS build
+# api-server is a dev dependency of rmf-dashboard-framework and installs a Python venv.
+RUN apt-get update && apt-get install -y --no-install-recommends python3 python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+ARG PNPM_VERSION=10.34.6
+RUN npm install -g pnpm@${PNPM_VERSION}
+
+ARG RMF_WEB_REF=85a34c3ec6481796d7c0eba745d9221055121656
+RUN mkdir -p /ws \
+    && curl -fsSL https://github.com/open-rmf/rmf-web/archive/${RMF_WEB_REF}.tar.gz \
+        | tar xz -C /ws --strip-components=1
+WORKDIR /ws
+# The sources are pinned, so let every dependency run its install scripts (pnpm 10 asks).
+ENV npm_config_dangerously_allow_all_builds=true
+RUN pnpm install --frozen-lockfile --filter rmf-dashboard-framework...
+
+WORKDIR /ws/packages/rmf-dashboard-framework
+# The framework's dependencies (api-client, rmf-models) first, as its build:example does.
+RUN pnpm run --filter '{.}^...' build
+
+COPY dashboard examples/rover
+# vitest reads examples/rover/vite.config.ts from its root.
+RUN pnpm exec vitest run --root examples/rover \
+    && pnpm exec tsc -p tsconfig.app.json
 
 ARG API_URL=http://localhost:8010
 ARG TRAJECTORY_URL=http://localhost:8006
-RUN grep -rl 'http://localhost:8000' /opt/dashboard \
-        | xargs sed -i "s#http://localhost:8000#${API_URL}#g" \
-    && ! grep -rq 'http://localhost:8000' /opt/dashboard \
-    && grep -rq "${API_URL}" /opt/dashboard \
-    && grep -rlF 'trajectoryServerUrl:"http://localhost:8006"' /opt/dashboard \
-        | xargs sed -i "s#trajectoryServerUrl:\"http://localhost:8006\"#trajectoryServerUrl:\"${TRAJECTORY_URL}\"#g" \
-    && grep -rqF "trajectoryServerUrl:\"${TRAJECTORY_URL}\"" /opt/dashboard
+RUN VITE_RMF_API_URL=${API_URL} VITE_RMF_TRAJECTORY_URL=${TRAJECTORY_URL} \
+    pnpm exec vite -c examples/rover/vite.config.ts build examples/rover
+
+FROM docker.io/library/node:22-bookworm-slim
+RUN npm install -g serve@14
+COPY --from=build /ws/packages/rmf-dashboard-framework/examples/rover/dist /opt/dashboard
+EXPOSE 3000
+ENTRYPOINT ["serve", "-sn", "/opt/dashboard"]
