@@ -52,7 +52,10 @@ rmf_fleet:
   # What an idle rover does: "nothing" stays where the last task ended, and starting RMF never
   # moves it. "park" would send it to its charger after every task and whenever RMF starts.
   finishing_request: "nothing"
-  responsive_wait: true
+  # Off: a responsive wait drives an idle robot to its nearest waypoint and holds it there (to
+  # make way for other robots). With one rover that only moves it on its own, e.g. right after
+  # RMF starts (rmf_fleet_adapter TaskManager::_begin_waiting).
+  responsive_wait: false
   reassign_task_interval: 120
   robots:
     rover_a1:

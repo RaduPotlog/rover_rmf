@@ -71,8 +71,10 @@ two-node VDA order, from the rover's current pose to the destination, in the for
   once, and without the backoff RMF and the rover exchanged an order and a refusal every second
   over 4G.
 - **`stop()`:** sends `cancelOrder`, and cancels a running perform-action.
-- **Idle rover:** `finishing_request: "nothing"`, so the rover stays where its last task ended. Starting
-  RMF never moves it by itself. ("park" would send it to its charger after every task and on startup.)
+- **Idle rover:** `finishing_request: "nothing"` and `responsive_wait: false`, so the rover stays
+  where its last task ended and starting RMF never moves it by itself. "park" would send it to its
+  charger after every task and on startup. A responsive wait would drive it to the nearest
+  waypoint.
 - **Perform-actions:** a compose task's `perform_action` runs in the adapter
   (`application/actions.py`), by category. The only one so far is `wait`
   (`{"duration_sec": N}`, up to 3600 s): the rover stays where it is and the adapter finishes
