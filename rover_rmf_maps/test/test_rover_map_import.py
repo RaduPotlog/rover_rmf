@@ -93,8 +93,23 @@ def test_graph_is_a_connected_spanning_set(tmp_path):
 
 
 def test_closed_wall_is_reported_not_silently_split(tmp_path):
-    with pytest.raises(MapImportError, match='cannot all be joined'):
+    with pytest.raises(MapImportError, match='cannot all be joined') as e:
         import_site('lab', write_map(tmp_path, gap=False), 'dock', clearance=0.3)
+    assert 'lower the clearance' not in str(e.value)   # no clearance gets through a wall
+
+
+def test_narrow_gap_names_the_closest_link_and_a_clearance_that_works(tmp_path):
+    # Without the place in the gap, the 1.1 m gap leaves dock - right ~0.6 m, under 0.8.
+    places = {n: p for n, p in PLACES.items() if n != 'gap'}
+    directory = write_map(tmp_path, places=places)
+    with pytest.raises(MapImportError, match='cannot all be joined') as e:
+        import_site('lab', directory, 'dock', clearance=0.8)
+    message = str(e.value)
+    assert 'dock - right' in message
+    suggested = float(message.split('lower the clearance to ')[1].split(' m')[0])
+    assert 0.5 <= suggested < 0.8
+    site = import_site('lab', directory, 'dock', clearance=suggested)
+    assert len(site.waypoints) == len(places)
 
 
 def test_place_close_to_a_wall_warns_but_stays_reachable(tmp_path):

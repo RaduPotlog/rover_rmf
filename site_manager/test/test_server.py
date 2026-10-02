@@ -82,6 +82,8 @@ def test_import_errors_are_request_errors(manager):
         manager.import_map({'name': '../etc'})
     with pytest.raises(server.RequestError, match='Gazebo site'):
         manager.import_map({'name': 'rover_world'})
+    with pytest.raises(server.RequestError, match='must be > 0'):
+        manager.import_map({'name': 'lab', 'charger': 'dock', 'clearance': 0})
 
 
 def test_failed_reimport_keeps_the_previous_site(manager):

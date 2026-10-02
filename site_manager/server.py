@@ -164,6 +164,8 @@ class SiteManager:
             neighbours = int(request.get('neighbours', 3))
         except (TypeError, ValueError):
             raise RequestError('clearance, max_lane and neighbours must be numbers')
+        if not (clearance > 0 and max_lane > 0 and neighbours >= 0):
+            raise RequestError('clearance and max_lane must be > 0, neighbours >= 0')
 
         with self._lock, tempfile.TemporaryDirectory() as tmp:
             map_dir = self.source.fetch(name, tmp)

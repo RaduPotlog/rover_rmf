@@ -199,7 +199,7 @@ async function refreshMaps() {
   try {
     const maps = await api('GET', '/api/rover/maps');
     if (!maps.length) { $('maps').innerHTML = '<p class="muted">No maps saved on the rover yet.</p>'; return; }
-    $('maps').innerHTML = `<table><thead><tr><th>Map</th><th>Places</th><th>Charger</th><th></th></tr></thead><tbody>` +
+    $('maps').innerHTML = `<table><thead><tr><th>Map</th><th>Places</th><th>Charger</th><th title="How far lanes keep from obstacles and unexplored areas">Clearance</th><th></th></tr></thead><tbody>` +
       maps.map((m) => {
         const guess = m.places.find((p) => p.toLowerCase() === 'dock') || m.places[0] || '';
         const options = m.places.map((p) => `<option ${p === guess ? 'selected' : ''}>${esc(p)}</option>`).join('');
@@ -209,6 +209,7 @@ async function refreshMaps() {
                   <div class="muted">${m.modified ? 'saved ' + ago(m.modified) : ''}</div></td>
                 <td class="places">${m.places.map((p) => `<span class="chip">${esc(p)}</span>`).join('') || '<span class="muted">none</span>'}</td>
                 <td>${m.places.length ? `<select id="charger-${esc(m.name)}">${options}</select>` : ''}</td>
+                <td><input id="clearance-${esc(m.name)}" type="number" min="0.3" max="3" step="0.05" value="0.8" style="width:4.5em"> m</td>
                 <td><button class="primary" data-import="${esc(m.name)}" ${ready ? '' : 'disabled'}>Import</button>
                   ${hint ? `<div class="muted">${esc(hint)}</div>` : ''}</td></tr>`;
       }).join('') + '</tbody></table>';
@@ -219,13 +220,14 @@ async function refreshMaps() {
 
 async function importMap(name, button) {
   const charger = ($(`charger-${name}`) || {}).value;
+  const clearance = parseFloat(($(`clearance-${name}`) || {}).value) || 0.8;
   button.disabled = true; button.textContent = 'Importing…';
   $('import-result').innerHTML = '';
   try {
-    const r = await api('POST', '/api/import', {name, charger});
+    const r = await api('POST', '/api/import', {name, charger, clearance});
     const warnings = r.warnings.map((w) => `<div class="warning">⚠ ${esc(w)}</div>`).join('');
     $('import-result').innerHTML = `<div class="message ok"><b>${esc(name)}</b> imported:
-      ${r.waypoints.length} places, ${r.lanes.length} lanes, charger ${esc(r.charger)}.
+      ${r.waypoints.length} places, ${r.lanes.length} lanes, charger ${esc(r.charger)}, clearance ${r.options.clearance} m.
       ${r.active ? 'RMF runs this site, so it restarts on the new version now.' : 'Activate it below to run RMF on it.'}
       ${warnings}</div>`;
     await refreshStatus();

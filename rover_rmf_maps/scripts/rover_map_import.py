@@ -25,7 +25,7 @@ Pure Python + PyYAML, so it runs on the host and in tests without ROS or RMF.
 from dataclasses import dataclass, field
 import math
 import os
-from typing import Dict, List, Sequence, Tuple
+from typing import Callable, Dict, List, Sequence, Tuple
 
 from building_writer import building_yaml, Waypoint
 import yaml
@@ -208,30 +208,61 @@ def clearance_at(dist: Sequence[Sequence[float]], px: float, py: float) -> float
     return 0.0
 
 
-def segment_is_clear(dist, a: Tuple[float, float], b: Tuple[float, float],
-                     clearance_cells: float) -> bool:
+def lane_room(dist, a: Tuple[float, float], b: Tuple[float, float],
+              clearance_cells: float) -> Tuple[float, Tuple[float, float]]:
     """
-    Whether a lane a-b keeps clearance_cells from anything blocked, sampled every half cell.
+    The least room (cells) a lane a-b keeps, sampled every half cell, and where: what
+    segment_is_clear compares with clearance_cells.
 
     Within clearance_cells of either end the lane only has to stay out of blocked cells: places
     next to a wall (a dock) stay reachable, Nav 2 does the last bit, and a lane still cannot
-    pass through a wall, whose cells are blocked.
+    pass through a wall, whose cells are blocked. Touching one there counts as no room at all.
     """
     length = math.hypot(b[0] - a[0], b[1] - a[1])
     steps = max(1, int(length * 2))
+    least, where = math.inf, a
     for i in range(steps + 1):
         t = i / steps
-        room = clearance_at(dist, a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
-        near_end = min(t, 1 - t) * length < clearance_cells
-        if room < (1.0 if near_end else clearance_cells):
-            return False
-    return True
+        point = (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+        room = clearance_at(dist, *point)
+        if min(t, 1 - t) * length < clearance_cells:
+            if room < 1.0:
+                return 0.0, point
+        elif room < least:
+            least, where = room, point
+    return least, where
+
+
+def segment_is_clear(dist, a: Tuple[float, float], b: Tuple[float, float],
+                     clearance_cells: float) -> bool:
+    """Whether a lane a-b keeps clearance_cells from anything blocked (see lane_room)."""
+    return lane_room(dist, a, b, clearance_cells)[0] >= clearance_cells
+
+
+def nearest_blocked(dist, point: Tuple[float, float], radius: float) -> Tuple[int, int]:
+    """The blocked cell (col, row) nearest a pixel position, searched within radius cells."""
+    reach = int(math.ceil(radius)) + 2
+    col, row = int(point[0]), int(point[1])
+    best, cell = math.inf, (col, row)
+    for r in range(max(0, row - reach), min(len(dist), row + reach + 1)):
+        for c in range(max(0, col - reach), min(len(dist[0]), col + reach + 1)):
+            if dist[r][c] == 0.0:
+                d = math.hypot(c + 0.5 - point[0], r + 0.5 - point[1])
+                if d < best:
+                    best, cell = d, (c, r)
+    return cell
 
 
 # --- lanes ------------------------------------------------------------------------------------
 
 def plan_lanes(points: Dict[str, Tuple[float, float]], dist, clearance_cells: float,
-               max_lane_cells: float, neighbours: int) -> List[Tuple[str, str]]:
+               max_lane_cells: float, neighbours: int, resolution: float = 1.0,
+               to_world: Callable[[float, float], Tuple[float, float]] = lambda x, y: (x, y)
+               ) -> List[Tuple[str, str]]:
+    """
+    The lanes between places (pixel positions). resolution and to_world (pixel -> map
+    metres) only word the error when the places cannot all be joined.
+    """
     names = list(points)
     candidates = []
     for i, a in enumerate(names):
@@ -263,8 +294,9 @@ def plan_lanes(points: Dict[str, Tuple[float, float]], dist, clearance_cells: fl
     if len(components) > 1:
         groups = '; '.join(', '.join(sorted(c)) for c in components.values())
         raise MapImportError(
-            f'the places cannot all be joined by clear straight lanes: {groups}. Add places '
-            'where corridors meet, or relax --clearance / --max-lane')
+            f'the places cannot all be joined by clear straight lanes: {groups}. '
+            + closest_link(points, dist, clearance_cells, max_lane_cells, root, resolution,
+                           to_world))
 
     # Plus each place's shortest lanes, for alternative routes.
     for n in names:
@@ -272,6 +304,36 @@ def plan_lanes(points: Dict[str, Tuple[float, float]], dist, clearance_cells: fl
         for _, a, b in mine[:neighbours]:
             chosen.add((a, b))
     return sorted(chosen, key=lambda e: (names.index(e[0]), names.index(e[1])))
+
+
+def closest_link(points, dist, clearance_cells, max_lane_cells, root, resolution,
+                 to_world) -> str:
+    """Advice for a split graph: the link between two groups that comes closest to clear."""
+    best = None
+    for a in points:
+        for b in points:
+            if a >= b or root(a) == root(b):
+                continue
+            length = math.hypot(points[a][0] - points[b][0], points[a][1] - points[b][1])
+            if length > max_lane_cells:
+                continue
+            room, where = lane_room(dist, points[a], points[b], clearance_cells)
+            if best is None or room > best[0]:
+                best = (room, a, b, where)
+    if best is None:
+        return (f'No two places in different groups are within the maximum lane length '
+                f'({max_lane_cells * resolution:.1f} m): add places in between.')
+    room, a, b, where = best
+    c, r = nearest_blocked(dist, where, max(room, 1.0))
+    x, y = to_world(c + 0.5, r + 0.5)
+    room_m = math.floor(room * resolution * 100) / 100
+    need = clearance_cells * resolution
+    advice = (f'The closest link, {a} - {b}, passes {room_m:.2f} m from an obstacle or '
+              f'unexplored area at ({x:.1f}, {y:.1f}) (needs {need:.2f} m). '
+              'Save a place on the open side of it')
+    if room_m > 0:
+        advice += f', or lower the clearance to {room_m:.2f} m'
+    return advice + '.'
 
 
 # --- the whole import --------------------------------------------------------------------------
@@ -302,7 +364,7 @@ def import_site(name: str, map_dir: str, charger: str, clearance: float = 0.8,
     r = meta.resolution
     ox, oy = meta.origin[0], meta.origin[1]
     dist = distance_to_blocked(grid)
-    clearance_cells = clearance / r
+    clearance_cells = clearance / r - 1e-9  # the clearance the error suggests must pass
     warnings = []
     points, waypoints = {}, []
     for p in places:
@@ -316,7 +378,8 @@ def import_site(name: str, map_dir: str, charger: str, clearance: float = 0.8,
         points[p.name] = (px, py)
         waypoints.append(Waypoint(p.name, px, py, charger=p.name == charger_name))
 
-    lanes = plan_lanes(points, dist, clearance_cells, max_lane / r, neighbours)
+    lanes = plan_lanes(points, dist, clearance_cells, max_lane / r, neighbours, r,
+                       lambda px, py: (ox + px * r, oy + (height - py) * r))
     return Site(name=name, width=width, height=height, resolution=r,
                 translation=(round(ox, 6), round(oy + height * r, 6)),
                 floor_plan=floor_plan(grid), waypoints=waypoints, lanes=lanes,
