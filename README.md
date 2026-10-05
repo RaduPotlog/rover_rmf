@@ -348,3 +348,9 @@ reads `rover_world.sdf` and rewrites the PNG and the building file.
   They only shape RMF's planning; the real rover reports its own battery.
 - **Straight lanes between places.** Imported sites get only these, so a place hidden behind a
   corner needs an intermediate place.
+
+## License
+
+Apache-2.0 (`LICENSE`). `dashboard/main.tsx` is derived from rmf-web's demo dashboard
+([open-rmf/rmf-web](https://github.com/open-rmf/rmf-web), Apache-2.0); its header names the
+upstream file and commit.
