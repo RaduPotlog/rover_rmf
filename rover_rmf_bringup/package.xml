@@ -13,7 +13,8 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <exec_depend>rmf_building_map_tools</exec_depend>
-  <exec_depend>rmf_task_ros2</exec_depend>
+  <!-- No Lyrical release; RMF runs in the Jazzy image (docker/Dockerfile.rmf). -->
+  <exec_depend condition="$ROS_DISTRO == jazzy">rmf_task_ros2</exec_depend>
   <exec_depend>rmf_traffic_ros2</exec_depend>
   <exec_depend>rmf_visualization</exec_depend>
   <exec_depend>rover_rmf_fleet_adapter</exec_depend>
