@@ -8,7 +8,7 @@ rmf_fleet:
   name: "rover_fleet"
   limits:
     # [velocity m/s, acceleration m/s^2] RMF plans its schedule with. Nav 2 caps the rover at
-    # 0.8 m/s and 1.5 m/s^2 (rover_nav_params.yaml velocity_smoother max_velocity/max_accel);
+    # 0.8 m/s and 1.4 m/s^2 (rover_nav_params.yaml velocity_smoother max_velocity/max_accel);
     # 0.5 m/s is the cruise it keeps in practice (wheel PID overshoot, memory 2026-09-27) and
     # keeps RMF's arrival estimates conservative. ASSUMPTION.
     linear: [0.5, 0.75]
