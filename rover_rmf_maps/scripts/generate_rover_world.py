@@ -45,7 +45,7 @@ RESOLUTION = 0.05         # m per pixel
 PIXELS = int(round(2 * HALF_SIZE / RESOLUTION))
 
 # World coordinates (m). Kept >= 1.5 m clear of obstacles and >= 2 m from the walls at +/-11 m:
-# the rover's footprint is 0.913 x 0.803 m (circumscribed radius 0.61 m).
+# the rover's footprint is 0.923 x 0.802 m (circumscribed radius 0.61 m).
 CHARGER = 'rover_a1_charger'
 WAYPOINTS = {
     CHARGER: (0.0, -2.0),     # the spawn pose (rover_gazebo simulate_robot.launch.py x/y)

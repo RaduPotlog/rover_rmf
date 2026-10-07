@@ -15,8 +15,8 @@ rmf_fleet:
     # Skid steer: wz 1.0 command gives ~0.5 rad/s real turn rate (verified live 2026-09-27).
     angular: [0.5, 1.0]
   profile:
-    # Circle around the 0.913 x 0.803 m footprint (rover_nav_params.yaml footprint comment,
-    # measured 2026-09-27): radius = hypot(0.4565, 0.4015) = 0.61 m.
+    # Circle around the 0.923 x 0.802 m footprint (rover_navigation bringup.launch.py, CAD tyre
+    # edges + 0.04 m, 2026-10-07): radius = hypot(0.4614, 0.4008) = 0.61 m.
     footprint: 0.61
     # Space other fleets' robots should keep. ASSUMPTION.
     vicinity: 0.9
