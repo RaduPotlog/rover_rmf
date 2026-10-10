@@ -172,9 +172,9 @@ drive UI, and that map becomes the RMF site.
 1. **Deploy.** Push the VDA 5050 and drive-mode work (rover_vda5050 `master`, rover_orchestrator,
    rover_ros, rover_drive_interface, rover_docker), then `balena push`.
 2. **balenaCloud variables, on all services:**
-   - `ROVER_LOCALIZATION_SOURCE=indoor`
-   - `ROVER_START_MISSION_MANAGER=true`
-   - `ROVER_START_VDA5050=true`
+   - `ROVER_ORCH_LOCALIZATION_SOURCE=indoor`
+   - `ROVER_ORCH_MISSION_MANAGER=true`
+   - `ROVER_VDA5050_ENABLE=true`
    - `ROVER_VDA5050_LOCAL_BROKER=true` is already the default.
 3. **Map the area** in the drive UI.
    - Start mapping, drive the area, and save the map (e.g. `lab`). Then load it.
@@ -304,7 +304,7 @@ while the laptop is off. Every port is published on the WireGuard address only.
 
 | Variable | Value |
 |---|---|
-| `ROVER_START_VDA5050` | `true` |
+| `ROVER_VDA5050_ENABLE` | `true` |
 | `ROVER_VDA5050_LOCAL_BROKER` | `false` |
 | `ROVER_VDA5050_BROKER_HOST` | `10.8.0.1` |
 | `ROVER_VDA5050_BROKER_PORT` | `1883` |

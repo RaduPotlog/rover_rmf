@@ -56,7 +56,7 @@ fi
 # Sourcing only prepares the shell: RMW, namespace, workspace overlay.
 # shellcheck disable=SC1090
 source "$ROVER_SIM"
-NS="${ROVER_NAMESPACE:-rover}"
+NS="${ROVER_SYSTEM_NAMESPACE:-rover}"
 
 if ! ss -Hltn 'sport = :7447' 2>/dev/null | grep -q LISTEN; then
     echo "No zenoh router on :7447: start the simulation (rover_sim.sh) first." >&2
