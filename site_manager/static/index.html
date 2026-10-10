@@ -67,6 +67,9 @@
   code, pre { font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
   pre { background: var(--chip); padding: 10px 12px; border-radius: 7px; overflow-x: auto;
         margin: 8px 0; white-space: pre-wrap; word-break: break-all; }
+  .cmd { position: relative; }
+  .cmd pre { padding-right: 84px; }
+  .cmd button { position: absolute; top: 4px; right: 4px; padding: 3px 10px; font-size: 13px; }
   .sites { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
   .site { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; display: flex;
           flex-direction: column; }
@@ -122,7 +125,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let status = null;
+let status = null, accessHtml = '';
 
 async function api(method, path, body) {
   const res = await fetch(path, {method, headers: {'Content-Type': 'application/json'},
@@ -162,7 +165,7 @@ function renderAccess() {
     html = `<span class="status"><span class="dot warn"></span>The rover does not know this page's key yet</span>
       <p>Run this once in a terminal on this laptop, in <code>src/rover_rmf</code>, and type the
          rover's root password when asked:</p>
-      <pre>docker compose -f docker/docker-compose.yml exec site-manager rover-authorize</pre>
+      <div class="cmd"><pre>docker compose -f docker/docker-compose.yml exec site-manager rover-authorize</pre><button data-copy>Copy</button></div>
       <p class="muted">A new rover release (balena push) forgets the key and changes the rover's host key; run it again then and confirm the new host key.</p>`;
   } else {
     html = `<span class="status"><span class="dot bad"></span>Cannot reach ${esc(a.source)}</span>
@@ -170,7 +173,31 @@ function renderAccess() {
       <p class="muted">Is the laptop on the rover network (192.168.1.x or the ROVER-A1 access point),
          and is the rover on?</p>`;
   }
-  $('access').innerHTML = html;
+  // Re-render only on change: the 3 s refresh would otherwise wipe a text selection.
+  if (html !== accessHtml) $('access').innerHTML = accessHtml = html;
+}
+
+async function copyText(text) {
+  if (window.isSecureContext && navigator.clipboard) return navigator.clipboard.writeText(text);
+  // Plain http on the LAN IP has no navigator.clipboard.
+  const t = document.createElement('textarea');
+  t.value = text; t.style.position = 'fixed'; t.style.opacity = '0';
+  document.body.appendChild(t); t.select();
+  const ok = document.execCommand('copy');
+  t.remove();
+  if (!ok) throw new Error('copy refused');
+}
+
+async function copyCommand(button) {
+  const pre = button.previousElementSibling;
+  try {
+    await copyText(pre.textContent);
+    button.textContent = 'Copied ✓';
+  } catch (e) {
+    getSelection().selectAllChildren(pre);
+    button.textContent = 'Press Ctrl+C';
+  }
+  setTimeout(() => { button.textContent = 'Copy'; }, 1500);
 }
 
 function renderSites() {
@@ -258,6 +285,7 @@ document.addEventListener('click', async (event) => {
   if (!b) return;
   try {
     if (b.id === 'refresh-maps') await refreshMaps();
+    else if ('copy' in b.dataset) await copyCommand(b);
     else if (b.dataset.import) await importMap(b.dataset.import, b);
     else if (b.dataset.activate) { b.disabled = true; await api('POST', '/api/activate', {name: b.dataset.activate}); await refreshStatus(); }
     else if (b.dataset.delete && confirm(`Delete the site ${b.dataset.delete}? The map on the rover stays.`)) {
